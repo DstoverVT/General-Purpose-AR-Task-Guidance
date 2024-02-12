@@ -9,18 +9,29 @@ using UnityEngine.Events;
 using UnityEditor;
 using Newtonsoft.Json;
 using System.Collections.Generic;
+using MixedReality.Toolkit.UX;
+using UnityEngine.UI;
+using TMPro;
+using Unity.VisualScripting;
 
 public class ObjectDetector : MonoBehaviour
 {
     private PhotoCapture photoCaptureObject;
     private SpatialMapping spatialMapper;
     private Resolution imageResolution;
-
     private string imagePath;
+    private float startPhotoTime = 0f;
+    private float startRequestTime = 0f;
+    private float startDrawingTime = 0f;
+
+    //[SerializeField]
+    //private string serverIP;
+    //[SerializeField]
+    //private string serverPort;
+
     [SerializeField]
-    private string serverIP;
-    [SerializeField]
-    private string serverPort;
+    private GameObject inputField;
+
 
     // Root myDeserializedClass = JsonConvert.DeserializeObject<Root>(myJsonResponse);
     [Serializable]
@@ -28,7 +39,9 @@ public class ObjectDetector : MonoBehaviour
     {
         public List<List<float>> boxes { get; set; }
         public List<string> phrases { get; set; }
-        public bool success { get; set; }
+        public List<float> confidence { get; set; }
+        public string action { get; set; }
+        public int threshold { get; set; }
     }
 
     [Serializable]
@@ -48,6 +61,8 @@ public class ObjectDetector : MonoBehaviour
         }
         spatialMapper = GameObject.Find("SpatialMapping").GetComponent<SpatialMapping>();
         OnDetectionComplete.AddListener(handleDetectionResults);
+
+        //Debug.Log("Camera resolution: " + spatialMapper.GetLastSavedCamera().pixelWidth + "x" + spatialMapper.GetLastSavedCamera().pixelHeight);
     }
 
     // Update is called once per frame
@@ -55,32 +70,78 @@ public class ObjectDetector : MonoBehaviour
     {
     }
 
+    private VisualController.Hand GetHandVisual(string handType)
+    {
+        string action = handType.ToLower();
+
+        if(action == "press")
+        {
+            return VisualController.Hand.Press;
+        }
+        else if(action == "twist")
+        {
+            return VisualController.Hand.Twist;
+        }
+
+        return VisualController.Hand.Error;
+    }
+
+    int GetBestBoxIndex(List<float> confidences, List<List<float>> boxes, int threshold)
+    {
+        var bestBox = confidences
+            .Zip(boxes, (confidence, box) => new { Confidence = confidence, Box = box })
+            .Select((item, index) => new { item.Confidence, item.Box, Index = index })
+            .Where(box => box.Box[2] < threshold && box.Box[3] < threshold)
+            .OrderByDescending(box => box.Confidence)
+            .FirstOrDefault();
+
+        return bestBox.Index;
+    }
+
     private void handleDetectionResults(DetectionResults results)
     {
         if (results.boxes.Count > 0)
         {
-            List<float> box1 = results.boxes[0];
-            Debug.Log("First box: ");
-            Debug.Log(string.Join(", ", box1));
+            /* Get box with highest confidence */
+            int highestIdx = GetBestBoxIndex(results.confidence, results.boxes, results.threshold);
+            Debug.Log("Box confidence: " + results.confidence[highestIdx]);
+            Debug.Log("Box label: " + results.phrases[highestIdx]);
+            //Debug.Log("First box: ");
+            //Debug.Log(string.Join(", ", box1));
+            List<float> bestBox = results.boxes[highestIdx];
 
-            Vector2 objectLocation = TransformBoxToViewportPixels(new Vector2(box1[0], box1[1]));
-            spatialMapper.PlaceHandFromMesh(objectLocation);
+            Vector2 objectLocation = TransformBoxToScreenPixels(new Vector2(bestBox[0], bestBox[1]));
+
+            VisualController.Hand visual = GetHandVisual(results.action);
+            if (visual == VisualController.Hand.Error)
+            {
+                Debug.Log("Invalid hand type returned from model");
+            }
+            else
+            {
+                spatialMapper.PlaceHandFromMesh(objectLocation, visual, SpatialMapping.spatialMeshLayer, true);
+                spatialMapper.ClearState();
+            }
         }
         else
         {
             Debug.Log("No boxes were found for object");
         }
+
+        Debug.Log($"Visual time: {Time.realtimeSinceStartup - startDrawingTime} s");
     }
 
     /* Convert the box pixel location to a location on Hololens view */
-    private Vector2 TransformBoxToViewportPixels(Vector2 imagePixels)
+    private Vector2 TransformBoxToScreenPixels(Vector2 imagePixels)
     {
         /* Image taken from Hololens has different resolution than view does */
-        float widthScale = (float)spatialMapper.mainCamera.pixelWidth / (float)imageResolution.width;
-        float heightScale = (float)spatialMapper.mainCamera.pixelHeight / (float)imageResolution.height;
+        //float widthScale = (float)spatialMapper.GetLastSavedCamera().pixelWidth / (float)imageResolution.width;
+        //float heightScale = (float)spatialMapper.GetLastSavedCamera().pixelHeight / (float)imageResolution.height;
+        float widthScale = (float)spatialMapper.GetLastSavedCamera().pixelWidth / (float)imageResolution.width;
+        float heightScale = (float)spatialMapper.GetLastSavedCamera().pixelHeight / (float)imageResolution.height;
         float x_coord = imagePixels.x * widthScale;
         /* box is returned as (x, y) from top-left, Unity uses bottom-left as (0, 0). Conversion: */
-        float y_coord = spatialMapper.mainCamera.pixelHeight - (imagePixels.y * heightScale); 
+        float y_coord = spatialMapper.GetLastSavedCamera().pixelHeight - (imagePixels.y * heightScale); 
 
         return new Vector2(x_coord, y_coord);
     }
@@ -88,6 +149,8 @@ public class ObjectDetector : MonoBehaviour
     /* Called on button press right now. */
     public void SaveImage()
     {
+        Debug.Log("Starting photo capture, hold head where you want to take picture...");
+        startPhotoTime = Time.realtimeSinceStartup;
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
     }
 
@@ -95,17 +158,21 @@ public class ObjectDetector : MonoBehaviour
     {
         photoCaptureObject = captureObject;
 
-        int cameraWidth = spatialMapper.mainCamera.pixelWidth;
-        int cameraHeight = spatialMapper.mainCamera.pixelHeight;
-        Debug.Log("Unity Camera Width: " + cameraWidth);
-        Debug.Log("Unity Camera Height: " + cameraHeight);
+        //int cameraWidth = spatialMapper.GetLastSavedCamera().pixelWidth;
+        //int cameraHeight = spatialMapper.GetLastSavedCamera().pixelHeight;
+        //Debug.Log("Unity Camera Width: " + cameraWidth);
+        //Debug.Log("Unity Camera Height: " + cameraHeight);
 
         Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
+        foreach(Resolution res in PhotoCapture.SupportedResolutions)
+        {
+            Debug.Log(res.width + "x" + res.height);
+        }
         //Resolution cameraResolution = PhotoCapture.SupportedResolutions
         //    .FirstOrDefault((res) => res.width == cameraWidth && res.height == cameraHeight);
         imageResolution = photoResolution;
-        Debug.Log("Image Width: " + photoResolution.width);
-        Debug.Log("Image Height: " + photoResolution.height);
+        //Debug.Log("Image Width: " + photoResolution.width);
+        //Debug.Log("Image Height: " + photoResolution.height);
 
         CameraParameters c = new CameraParameters();
         c.hologramOpacity = 0.0f;
@@ -125,7 +192,8 @@ public class ObjectDetector : MonoBehaviour
             string filename = "HL_capture_" + fileTime + ".jpg";
             imagePath = System.IO.Path.Combine(Application.persistentDataPath, filename);
 
-            photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
+            //photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
+            photoCaptureObject.TakePhotoAsync(OnCapturedPhotoToMemory);
         }
         else
         {
@@ -133,17 +201,28 @@ public class ObjectDetector : MonoBehaviour
         }
     }
 
-    void OnCapturedPhotoToDisk(PhotoCapture.PhotoCaptureResult result)
+
+    void OnCapturedPhotoToMemory(PhotoCapture.PhotoCaptureResult result, PhotoCaptureFrame frame)
     {
         if (result.success)
         {
-            Debug.Log("Saved Photo to disk with path: " + imagePath);
+            Debug.Log($"Photo capture time: {Time.realtimeSinceStartup - startPhotoTime} s");
+            //Debug.Log("Saved Photo to disk with path: " + imagePath);
+            spatialMapper.StoreState(frame);
+            /* Save photo to disk */
+            Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
+            frame.UploadImageDataToTexture(imageTexture);
+            byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
+            Destroy(imageTexture);
+            File.WriteAllBytes(imagePath, imageBytes);
+            //List<byte> imageBytes = new List<byte>();
+            //frame.CopyRawImageDataIntoBuffer(imageBytes);
             StartCoroutine(UploadImage());
             photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
         }
         else
         {
-            Debug.Log("Failed to save Photo to disk");
+            Debug.Log("Failed to save Photo to memory");
         }
     }
 
@@ -154,11 +233,21 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
+    string GetServerURL()
+    {
+        string text = inputField.GetComponent<MRTKUGUIInputField>().text;
+        //Debug.Log("Server URL" + text);
+        return text;
+    }
+
+
     IEnumerator UploadImage()
     {
-        Debug.Log("Upload image Coroutine.");
+        startRequestTime = Time.realtimeSinceStartup;
+        ////Debug.Log("Upload image Coroutine.");
         string endpoint = "upload_image";
-        string requestURL = $"http://{serverIP}:{serverPort}/{endpoint}";
+        string serverURL = GetServerURL();
+        string requestURL = $"http://{serverURL}/{endpoint}";
 
         WWWForm form = new WWWForm();
         if(!File.Exists(imagePath))
@@ -166,7 +255,7 @@ public class ObjectDetector : MonoBehaviour
             throw new FileNotFoundException("Image not found at path: " + imagePath);
         }
 
-        form.AddBinaryData("image", File.ReadAllBytes(imagePath), Path.GetFileName(imagePath));
+        form.AddBinaryData("image", File.ReadAllBytes(imagePath), "hololens_image.jpg");
         
         using(UnityWebRequest request = UnityWebRequest.Post(requestURL, form))
         {
@@ -180,9 +269,11 @@ public class ObjectDetector : MonoBehaviour
             }
             else
             {
-                Debug.Log("POST request succeeded. Response:");
-                Debug.Log(request.downloadHandler.text);
+                Debug.Log($"Full request time: {Time.realtimeSinceStartup - startRequestTime} s");
+                //Debug.Log("POST request succeeded. Response:");
+                //Debug.Log(request.downloadHandler.text);
                 /* Parse into JSON and send to a function not in Coroutine to parse boxes using Unity event. */
+                startDrawingTime = Time.realtimeSinceStartup;
                 DetectionResults output = JsonConvert.DeserializeObject<DetectionResults>(request.downloadHandler.text);
                 OnDetectionComplete.Invoke(output);
             }
@@ -193,9 +284,9 @@ public class ObjectDetector : MonoBehaviour
         {
             File.Delete(imagePath);
         }
-        catch(Exception e)
+        catch (Exception e)
         {
-            Debug.LogError("File could not be deleted: " + e.Message);
+            Debug.Log("File could not be deleted: " + e.Message);
         }
     }
 }

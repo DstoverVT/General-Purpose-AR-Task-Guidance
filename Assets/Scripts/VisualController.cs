@@ -10,13 +10,13 @@ public class VisualController : MonoBehaviour
     public enum Hand
     {
         Press = 0,
-        Twist = 1
+        Twist = 1,
+        Error = 2
     };
 
     private GameObject[] hands = new GameObject[2];
     private Transform mainCamera;
 
-    public Hand type;
 
     // Start is called before the first frame update
     void Start()
@@ -35,7 +35,7 @@ public class VisualController : MonoBehaviour
     /**
      * location: In world coordinates already. 
      */
-    public void PlaceHandVisual(Vector3 location, Vector3 normal)
+    public void PlaceHandVisual(Vector3 location, Vector3 normal, Hand type)
     {
         GameObject handVisual = hands[(int)type];
 
@@ -52,6 +52,6 @@ public class VisualController : MonoBehaviour
         Vector3 location = new Vector3(0, 0, 0.3f);
         Vector3 camForward = mainCamera.TransformDirection(Vector3.forward);
         location = mainCamera.TransformPoint(location);
-        PlaceHandVisual(location, -camForward);
+        PlaceHandVisual(location, -camForward, Hand.Twist);
     }
 }

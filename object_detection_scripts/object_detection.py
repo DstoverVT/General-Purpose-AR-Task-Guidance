@@ -18,12 +18,15 @@ class ObjectDetection:
         """
         self.HOME = os.path.dirname(os.path.abspath(__file__))
         print(f"Home path: {self.HOME}")
+        # self.CONFIG_PATH = os.path.join(
+        #     self.HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+        # )
         self.CONFIG_PATH = os.path.join(
-            self.HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+            self.HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinB_cfg.py"
         )
         print(self.CONFIG_PATH, "; exist:", os.path.isfile(self.CONFIG_PATH))
-
-        WEIGHTS_NAME = "groundingdino_swint_ogc.pth"
+        # WEIGHTS_NAME = "groundingdino_swint_ogc.pth"
+        WEIGHTS_NAME = "groundingdino_swinb_cogcoor.pth"
         self.WEIGHTS_PATH = os.path.join(self.HOME, "weights", WEIGHTS_NAME)
         print(self.WEIGHTS_PATH, "; exist:", os.path.isfile(self.WEIGHTS_PATH))
 
