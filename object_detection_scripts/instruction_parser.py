@@ -20,7 +20,7 @@ def parse_instruction(instruction: str, image_path: str) -> str:
 
     client = OpenAI()
 
-    possible_actions = ["press", "twist"]
+    possible_actions = ["press", "twist", "pick up", "pull"]
     action_string = ", ".join(possible_actions)
     # print(action_string)
 
@@ -31,7 +31,8 @@ def parse_instruction(instruction: str, image_path: str) -> str:
                     <object name> is the object the user should use to complete the instruction, which should be understandable by a fifth grader. \
                     Additionally, the user will have to interact with one of the objects to perform the instruction. The possible actions for the user include: {action_string}. \
                     So, another JSON field should be called 'action' which will include only one of the actions that the user should perform. \
-                    Do not include any other JSON fields other than 'objects' and 'action'."
+                    Add another JSON field called 'coordinate' with the (x, y) coordinates of the found object in the image. \
+                    Do not include any other JSON fields other than 'objects', 'action', and 'coordinate'."
 
     # system_prompt = "I am going to give you a picture with several bounding boxes around objects. I want you to output the \
     #                 bounding box color around the object that is most relevant for a user to complete an instruction also given to you."
@@ -94,10 +95,12 @@ def output_to_json(output):
 # Send image and instruction to instruction_parser
 # instruction = "Turn on coffee machine"
 # instruction = "Turn on the lights"
-instruction = "Raise the temperature by 1 degree"
+# instruction = "Pick up Clorox wipes"
+# instruction = "draw with the red marker"
+instruction = "turn on the lights"
 # instruction = "Turn top left burner to medium heat."
 # instruction = "Start the microwave"
-image_path = "data/HL_temperature.jpg"
+image_path = "data/HL_door.jpg"
 # image_path = "data/HL_microwave_close.jpg"
 output = parse_instruction(instruction, image_path)
 print(output)

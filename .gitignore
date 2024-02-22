@@ -9,3 +9,11 @@ obj/
 .vs/
 .vsconfig
 Library/
+object_detection_scripts/GroundingDINO/
+object_detection_scripts/CogVLM/
+object_detection_scripts/segment-anything/
+object_detection_scripts/sam_weights/
+object_detection_scripts/weights/
+object_detection_scripts/.env
+object_detection_scripts/__pycache__/
+

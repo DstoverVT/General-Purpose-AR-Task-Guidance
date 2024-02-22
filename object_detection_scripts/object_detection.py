@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 from groundingdino.util.inference import load_model, load_image, predict, annotate
 
 
+class DetectionException(Exception):
+    """Exception encountered during or before object detection."""
+
+
 class ObjectDetection:
     """Object detection using GroundingDINO model."""
 
@@ -17,6 +21,7 @@ class ObjectDetection:
         Prereq: Requires GroundingDINO repo to be cloned to current working directory and weights to be downloaded.
         """
         self.HOME = os.path.dirname(os.path.abspath(__file__))
+        self.BOX_FILENAME = "top_boxes_result.png"
         print(f"Home path: {self.HOME}")
         # self.CONFIG_PATH = os.path.join(
         #     self.HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
@@ -69,6 +74,58 @@ class ObjectDetection:
 
         return boxes, boxes_scaled, logits, phrases
 
+    def draw_top_boxes(
+        self,
+        image_source: np.array,
+        boxes: torch.Tensor,
+        confidence: torch.Tensor,
+        thres_num: int,
+    ):
+        colors = {
+            "RED": (0, 0, 255),
+            "ORANGE": (0, 165, 255),
+            "YELLOW": (0, 255, 255),
+            "GREEN": (0, 255, 0),
+            "BLUE": (255, 0, 0),
+            "PINK": (255, 0, 255),
+            "PURPLE": (102, 0, 102),
+            "BROWN": (0, 51, 102),
+        }
+        color_names = list(colors.keys())
+
+        if thres_num > len(colors):
+            raise DetectionException(
+                f"Ensure using less than {len(colors)} box thresholds."
+            )
+
+        cv_image = cv2.cvtColor(image_source, cv2.COLOR_RGB2BGR)
+
+        if len(boxes) > thres_num:
+            top_boxes = [
+                box
+                for box, _ in sorted(
+                    zip(boxes.tolist(), confidence.tolist()),
+                    key=lambda x: x[1],
+                    reverse=True,
+                )
+            ]
+            top_boxes = top_boxes[:thres_num]
+
+        # Draw thick boxes of different colors around each object
+        thickness = 5  # pixels
+        for i, box in enumerate(top_boxes):
+            cx, cy, width, height = box
+            top_left = (int(cx - width / 2), int(cy - height / 2))
+            bottom_right = (int(cx + width / 2), int(cy + height))
+            cv_image = cv2.rectangle(
+                cv_image, top_left, bottom_right, colors[color_names[i]], thickness
+            )
+
+        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        plt.imshow(cv_image)
+        plt.axis("off")
+        plt.savefig(self.BOX_FILENAME, bbox_inches="tight", pad_inches=0, dpi=300)
+
     def draw_detection(
         self,
         image_source: np.array,
@@ -107,13 +164,19 @@ class ObjectDetection:
         return images
 
     def __call__(
-        self, image_path: str, prompt: str, threshold: float, draw: bool = False
+        self,
+        image_path: str,
+        prompt: str,
+        threshold: float,
+        draw: bool = False,
+        num_box_thres=5,
     ):
         """Detect objects on image using prompt and threshold for model."""
         images = self.get_image(image_path)
         model_output = self.model_inference(images, prompt, threshold)
         if draw:
             self.draw_detection(images[0], model_output)
+        # self.draw_top_boxes(images[0], model_output[1], model_output[2], num_box_thres)
 
         return model_output
 

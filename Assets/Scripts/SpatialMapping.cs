@@ -22,6 +22,8 @@ public class SpatialMapping : MonoBehaviour
     private float timer = 0f;
 
     [SerializeField]
+    private VisualController.Hand testHandType;
+    [SerializeField]
     private Camera testCameraComponent;
     [SerializeField]
     private Transform cameraOffset;
@@ -115,11 +117,21 @@ public class SpatialMapping : MonoBehaviour
         {
             /* Place hand visual at position of mesh intersection. */
             //Debug.Log("Found depth value");
+
+            /* Instead of placing hand, system should store:
+             * Instruction: {
+             *  Action 1: Vector3
+             *  Action 2: Vector3
+             * }
+             * As 3D map of objects for each instruction
+             * 
+             * Then, display objects for the current instruction. */
             sphere.transform.position = raycastHit.point;
             visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType);
         }
         else
         {
+            visualController.TestPlaceHand(handType);
             Debug.Log("No depth was found.");
         }
     }
@@ -128,7 +140,7 @@ public class SpatialMapping : MonoBehaviour
     private void testRaycast()
     {
         Vector2 object2DLocation = new Vector2(mainCamera.pixelWidth / 2, mainCamera.pixelHeight / 2);
-        PlaceHandFromMesh(object2DLocation, VisualController.Hand.Press, spatialMeshLayer, false);
+        PlaceHandFromMesh(object2DLocation, testHandType, spatialMeshLayer, false);
     }
 
 

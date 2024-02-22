@@ -1,6 +1,10 @@
 {
     "objects": [
-        "bottom center red up-arrow button"
+        "right wall light switch"
     ],
-    "action": "press"
+    "action": "press",
+    "coordinate": [
+        841,
+        364
+    ]
 }

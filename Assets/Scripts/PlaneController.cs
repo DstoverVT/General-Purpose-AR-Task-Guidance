@@ -29,8 +29,8 @@ public class PlaneController : MonoBehaviour
         /* Find closest ARPlane to objectLocation */
         //ARPlane closestPlane = findClosestPlane();    
 
-        Debug.Log("Width: " + mainCamera.pixelWidth);
-        Debug.Log("Height: " + mainCamera.pixelHeight);
+        //Debug.Log("Width: " + mainCamera.pixelWidth);
+        //Debug.Log("Height: " + mainCamera.pixelHeight);
 
         //foreach(ARPlane plane in planeManager.trackables)
         //{

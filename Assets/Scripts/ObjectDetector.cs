@@ -82,10 +82,19 @@ public class ObjectDetector : MonoBehaviour
         {
             return VisualController.Hand.Twist;
         }
+        else if(action == "pick up")
+        {
+            return VisualController.Hand.Pickup;
+        }
+        else if(action == "pull")
+        {
+            return VisualController.Hand.Pull;
+        }
 
         return VisualController.Hand.Error;
     }
 
+    /* Should move this to Python script so don't need to build when changing it */
     int GetBestBoxIndex(List<float> confidences, List<List<float>> boxes, int threshold)
     {
         var bestBox = confidences
@@ -115,7 +124,7 @@ public class ObjectDetector : MonoBehaviour
             VisualController.Hand visual = GetHandVisual(results.action);
             if (visual == VisualController.Hand.Error)
             {
-                Debug.Log("Invalid hand type returned from model");
+                Debug.Log("Invalid action returned from model");
             }
             else
             {
@@ -164,10 +173,6 @@ public class ObjectDetector : MonoBehaviour
         //Debug.Log("Unity Camera Height: " + cameraHeight);
 
         Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
-        foreach(Resolution res in PhotoCapture.SupportedResolutions)
-        {
-            Debug.Log(res.width + "x" + res.height);
-        }
         //Resolution cameraResolution = PhotoCapture.SupportedResolutions
         //    .FirstOrDefault((res) => res.width == cameraWidth && res.height == cameraHeight);
         imageResolution = photoResolution;
