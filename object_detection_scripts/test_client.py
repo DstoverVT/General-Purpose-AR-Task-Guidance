@@ -8,7 +8,7 @@ def send_image():
     URL = "http://127.0.0.1:5000/upload_image"
 
     try:
-        img_file = open(os.path.join(HOME, "data", "HL_microwave_close.jpg"), "rb")
+        img_file = open(os.path.join(HOME, "data", "HL_door.jpg"), "rb")
     except Exception as e:
         print(e)
         return None

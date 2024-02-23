@@ -136,4 +136,4 @@ def upload_image():
 
 # MAIN
 configure_folder(detector.HOME)
-app.run(host="0.0.0.0", debug=True)
+app.run(host="0.0.0.0", debug=True, use_reloader=False)
