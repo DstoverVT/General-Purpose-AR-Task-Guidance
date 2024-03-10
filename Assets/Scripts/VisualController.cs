@@ -7,6 +7,8 @@ public class VisualController : MonoBehaviour
     [SerializeField]
     private GameObject handTwist;
     [SerializeField]
+    private GameObject handPull;
+    [SerializeField]
     private GameObject handPickup;
 
     public enum Hand
@@ -19,6 +21,14 @@ public class VisualController : MonoBehaviour
         Error
     };
 
+    private enum PickupState
+    {
+        Grab,
+        Translate,
+        Release,
+        Done
+    }
+
     private GameObject[] hands = new GameObject[(int)Hand.NumHands];
     private Transform mainCamera;
 
@@ -29,7 +39,7 @@ public class VisualController : MonoBehaviour
         hands[(int)Hand.Press] = handPress;
         hands[(int)Hand.Twist] = handTwist;
         hands[(int)Hand.Pickup] = handPickup;
-        hands[(int)Hand.Pull] = handPickup;
+        hands[(int)Hand.Pull] = handPull;
         mainCamera = GameObject.Find("Main Camera").transform;
     }
 
@@ -45,10 +55,10 @@ public class VisualController : MonoBehaviour
     public void PlaceHandVisual(Vector3 location, Vector3 normal, Hand type)
     {
         float[] distanceFromCenter = new float[(int)Hand.NumHands];
-        distanceFromCenter[(int)Hand.Press] = 0.25f;
-        distanceFromCenter[(int)Hand.Twist] = 0.15f;
-        distanceFromCenter[(int)Hand.Pickup] = 0.15f;
-        distanceFromCenter[(int)Hand.Pull] = 0.15f;
+        distanceFromCenter[(int)Hand.Press] = 0.20f;
+        distanceFromCenter[(int)Hand.Twist] = 0.10f;
+        distanceFromCenter[(int)Hand.Pickup] = 0.10f;
+        distanceFromCenter[(int)Hand.Pull] = 0.10f;
 
         GameObject handVisual = hands[(int)type];
         float dist = distanceFromCenter[(int)type];
@@ -59,7 +69,7 @@ public class VisualController : MonoBehaviour
             Vector3 offset = Vector3.up * dist;
             handVisual.transform.position = location + offset;
             /* Rotate hand towards ground. */
-            handVisual.transform.rotation = Quaternion.LookRotation(-Vector3.up, Vector3.right);
+            handVisual.transform.rotation = Quaternion.LookRotation(Vector3.right, Vector3.up);
         }
         /* Place hand at location along normal to surface. */
         else 
@@ -85,4 +95,13 @@ public class VisualController : MonoBehaviour
         GameObject handVisual = hands[(int)handType];
         handVisual.SetActive(false);
     }
+
+    //public void controlPickupHand(Vector3 source, Vector3 destination, PickupState state, float velocity)
+    //{
+    //    /* Position starts at source, moves along up vector, moves towards the destination (+ world up so it is above),
+    //     * moves down to destination object. */
+    //    Transform handVisual = hands[(int)Hand.Pickup].transform;
+
+    //    handVisual.position =   
+    //}
 }

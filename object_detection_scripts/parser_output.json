@@ -1,10 +1,8 @@
 {
     "objects": [
-        "right wall light switch"
+        "lower front dial"
     ],
-    "action": "press",
-    "coordinate": [
-        841,
-        364
+    "actions": [
+        "twist"
     ]
 }

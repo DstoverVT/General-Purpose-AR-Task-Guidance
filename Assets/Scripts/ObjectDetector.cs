@@ -6,13 +6,9 @@ using System.IO;
 using UnityEngine.Windows.WebCam;
 using UnityEngine.Networking;
 using UnityEngine.Events;
-using UnityEditor;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using MixedReality.Toolkit.UX;
-using UnityEngine.UI;
-using TMPro;
-using Unity.VisualScripting;
 
 public class ObjectDetector : MonoBehaviour
 {
@@ -37,11 +33,8 @@ public class ObjectDetector : MonoBehaviour
     [Serializable]
     private class DetectionResults
     {
-        public List<List<float>> boxes { get; set; }
-        public List<string> phrases { get; set; }
-        public List<float> confidence { get; set; }
         public string action { get; set; }
-        public int threshold { get; set; }
+        public List<float> center { get; set; }
     }
 
     [Serializable]
@@ -95,31 +88,23 @@ public class ObjectDetector : MonoBehaviour
     }
 
     /* Should move this to Python script so don't need to build when changing it */
-    int GetBestBoxIndex(List<float> confidences, List<List<float>> boxes, int threshold)
-    {
-        var bestBox = confidences
-            .Zip(boxes, (confidence, box) => new { Confidence = confidence, Box = box })
-            .Select((item, index) => new { item.Confidence, item.Box, Index = index })
-            .Where(box => box.Box[2] < threshold && box.Box[3] < threshold)
-            .OrderByDescending(box => box.Confidence)
-            .FirstOrDefault();
+    //int GetBestBoxIndex(List<float> confidences, List<List<float>> boxes, int threshold)
+    //{
+    //    var bestBox = confidences
+    //        .Zip(boxes, (confidence, box) => new { Confidence = confidence, Box = box })
+    //        .Select((item, index) => new { item.Confidence, item.Box, Index = index })
+    //        .Where(box => box.Box[2] < threshold && box.Box[3] < threshold)
+    //        .OrderByDescending(box => box.Confidence)
+    //        .FirstOrDefault();
 
-        return bestBox.Index;
-    }
+    //    return bestBox.Index;
+    //}
 
     private void handleDetectionResults(DetectionResults results)
     {
-        if (results.boxes.Count > 0)
+        if (results.center.Count > 0 && results.action.Length > 0)
         {
-            /* Get box with highest confidence */
-            int highestIdx = GetBestBoxIndex(results.confidence, results.boxes, results.threshold);
-            Debug.Log("Box confidence: " + results.confidence[highestIdx]);
-            Debug.Log("Box label: " + results.phrases[highestIdx]);
-            //Debug.Log("First box: ");
-            //Debug.Log(string.Join(", ", box1));
-            List<float> bestBox = results.boxes[highestIdx];
-
-            Vector2 objectLocation = TransformBoxToScreenPixels(new Vector2(bestBox[0], bestBox[1]));
+            Vector2 objectLocation = TransformBoxToScreenPixels(new Vector2(results.center[0], results.center[1]));
 
             VisualController.Hand visual = GetHandVisual(results.action);
             if (visual == VisualController.Hand.Error)
@@ -134,7 +119,7 @@ public class ObjectDetector : MonoBehaviour
         }
         else
         {
-            Debug.Log("No boxes were found for object");
+            Debug.Log("No boxes were found for object or action was empty");
         }
 
         Debug.Log($"Visual time: {Time.realtimeSinceStartup - startDrawingTime} s");

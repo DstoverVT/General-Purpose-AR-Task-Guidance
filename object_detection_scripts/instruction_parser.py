@@ -1,5 +1,4 @@
 import base64
-import cv2
 import json
 import re
 from dotenv import load_dotenv
@@ -14,6 +13,19 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
+def output_to_json(output):
+    """Parse output from GPT into JSON file called parser_output.json."""
+    start = output.find("{")
+    end = output.rfind("}") + 1
+    json_string = output[start:end]
+
+    filename = "parser_output.json"
+    json_data = json.loads(json_string)
+
+    with open(filename, "w") as file:
+        json.dump(json_data, file, indent=4)
+
+
 def parse_instruction(instruction: str, image_path: str) -> str:
     """Function to use GPT-4V to parse an instruction given images of environment."""
     base64_image = encode_image(image_path)
@@ -26,13 +38,14 @@ def parse_instruction(instruction: str, image_path: str) -> str:
 
     system_prompt = f"You will be given an instruction that a user has to perform. Your output should be in JSON format. \
                     One JSON field should be called 'objects', which will contain a list of objects (strings) that exist in the provided image that the user should use to complete the instruction. \
-                    Each object string should be structured as such: '<object position> <object name>', and should be understandable by a fifth grader. \
-                    <object position> is information to help a fifth grader find the object in the image without ambiguity. If there are multiple of the same object, give a relative position of this object to the others. \
-                    <object name> is the object the user should use to complete the instruction, which should be understandable by a fifth grader. \
-                    Additionally, the user will have to interact with one of the objects to perform the instruction. The possible actions for the user include: {action_string}. \
-                    So, another JSON field should be called 'action' which will include only one of the actions that the user should perform. \
-                    Add another JSON field called 'coordinate' with the (x, y) coordinates of the found object in the image. \
-                    Do not include any other JSON fields other than 'objects', 'action', and 'coordinate'."
+                    Try to use the minimum number of objects needed for the user complete the instruction. \
+                    Each object string should be structured as such: '<object position> <object name>' with the following properties: \
+                    <object name> is the specific object the user should use to complete the instruction. If the object is a component within a larger object, output the most specific component needed for the instruction. Try to specify the object with the lowest amount of words. \
+                    <object position> is the position of the object in the image. Check that the position ensures the object can't be confused with other similar objects, also include the object color if it is unique. Try to specify the position with the lowest amount of words. \
+                    Additionally, the user will have to interact with the objects to perform the instruction. The possible actions for the user include: {action_string}. \
+                    Each object within the 'objects' list should have a corresponding action the user should perform on the object. \
+                    So, include another JSON field called 'actions', which will contain a list of actions (strings) where each entry is the action the user should perform on the corresponding object entry in the 'objects' list. \
+                    Do not include any other JSON fields other than 'objects' and 'actions', which should both be lists of the same length."
 
     # system_prompt = "I am going to give you a picture with several bounding boxes around objects. I want you to output the \
     #                 bounding box color around the object that is most relevant for a user to complete an instruction also given to you."
@@ -41,9 +54,7 @@ def parse_instruction(instruction: str, image_path: str) -> str:
     system_prompt = re.sub(r"\s+", " ", system_prompt)
     # print(system_prompt)
 
-    example = (
-        '{\n"objects": [\n"position object 1"\n],\n"action": "action selection"\n}'
-    )
+    example = '{\n  "objects":\n  [\n    "position object 1"\n  ],\n  "actions":\n  [\n    "action 1"\n  ]\n}'
     # print(f"JSON:\n{example}")
 
     response = client.chat.completions.create(
@@ -76,33 +87,26 @@ def parse_instruction(instruction: str, image_path: str) -> str:
         max_tokens=300,
     )
 
-    return response.choices[0].message.content
+    output = response.choices[0].message.content
+    output_to_json(output)
+
+    return output
 
 
-def output_to_json(output):
-    """Parse output from GPT into JSON file called parser_output.json."""
-    start = output.find("{")
-    end = output.rfind("}") + 1
-    json_string = output[start:end]
-
-    filename = "parser_output.json"
-    json_data = json.loads(json_string)
-
-    with open(filename, "w") as file:
-        json.dump(json_data, file, indent=4)
-
-
+# if __name__ == "__main__":
 # Send image and instruction to instruction_parser
-# instruction = "Turn on coffee machine"
-# instruction = "Turn on the lights"
-# instruction = "Pick up Clorox wipes"
-# instruction = "draw with the red marker"
-instruction = "turn on the lights"
-# instruction = "Turn top left burner to medium heat."
-# instruction = "Start the microwave"
-image_path = "data/HL_door.jpg"
-# image_path = "data/HL_microwave_close.jpg"
-output = parse_instruction(instruction, image_path)
-print(output)
+# instruction = "Heat up toast"
+# image_path = "data/appliance_test/toaster.jpg"
 
-output_to_json(output)
+# output = parse_instruction(instruction, image_path)
+# print("-------- OUTPUT 1: ----------")
+# print(output)
+# output_to_json(output)
+
+# detector = ObjectDetectionInterface()
+# detector.prime_detection_with_test()
+# cropped_image = get_cropped_image(detector, image_path, 0.2)
+
+# second_output = parse_instruction(instruction, cropped_image)
+# print("-------- OUTPUT 2: ----------")
+# output_to_json(second_output)

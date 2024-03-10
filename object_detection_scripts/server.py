@@ -1,30 +1,30 @@
-import json
-import os
 import time
-from flask import Flask, request
-from werkzeug.utils import secure_filename
-from object_detection import ObjectDetection, DetectionException
 from datetime import datetime
+from flask import Flask, request, jsonify
+from object_detection import (
+    ObjectDetectionInterface,
+    DetectionException,
+)
+from task_guidance import (
+    delete_images,
+    detect_objects_in_image,
+    instruction_gpt_calls,
+    get_instructions_from_file,
+)
+from werkzeug.utils import secure_filename
+
 
 app = Flask(__name__)
-detector = ObjectDetection()
-
-
-def configure_folder(image_path):
-    """Adds image path as config variable."""
-    app.config["IMAGE_PATH"] = image_path
-
-
-def get_objects_from_json() -> tuple[list[str], str]:
-    """Return objects in promptable list for GroundingDINO from JSON file"""
-    filename = "parser_output.json"
-    with open(filename, "r") as file:
-        json_data = json.load(file)
-
-    object_list = json_data["objects"]
-    object_prompt = " . ".join(object_list)
-
-    return object_prompt, json_data["action"]
+# Run object detection once on test image since first takes way longer (caching)
+app.config["DETECTOR"] = ObjectDetectionInterface()
+detector: ObjectDetectionInterface = app.config["DETECTOR"]
+detector.prime_detection_with_test()
+# Configure other app config data
+app.config["CROP_THRESHOLD"] = 0.2
+app.config["OBJECT_THRESHOLD"] = 0.3
+# Structure to hold instructions input in 'instructions.txt'
+app.config["INSTRUCTIONS"] = []
+instructions: list[str] = app.config["INSTRUCTIONS"]
 
 
 @app.after_request
@@ -36,10 +36,10 @@ def print_response(response):
 
 def get_error_response(msg: str):
     """Creates HTTP response for an error case."""
-    return {"message": msg}, 400
+    return {"message": msg}, 500
 
 
-def save_image() -> str:
+def save_image_from_request() -> list[str]:
     """Checks and saves image from HTTP post request.
 
     Returns: filepath string of image
@@ -63,77 +63,68 @@ def save_image() -> str:
     timestamp = now.strftime("%m-%d_%H-%M-%S")
 
     filename = timestamp + secure_filename(image.filename)
-    filepath = os.path.join(app.config["IMAGE_PATH"], filename)
-    image.save(filepath)
+    image.save(filename)
 
-    return filepath
+    image_paths = []
+    image_paths.append(filename)
 
-
-def determine_best_box(boxes, confidence, phrases) -> tuple[float, float]:
-    """Gets best box from object detection given all boxes, confidences, and phrases.
-
-    Args:
-        - boxes: List of boxes from object detection
-        - confidence: List of confidences from object detection
-
-    Returns:
-        - (float, float) 2D coordinate of best match object to send to headset
-    """
-    # Send top_boxes_result.png to GPT-4V to select best box for the given object (from JSON file)
-
-
-def delete_images(hololens_image_path: str):
-    # Remove file that was saved, no need anymore
-    if os.path.exists(hololens_image_path):
-        os.remove(hololens_image_path)
-
-    # box_image_path = os.path.join(detector.HOME, detector.BOX_FILENAME)
-    # if os.path.exists(box_image_path):
-    #     os.remove(box_image_path)
+    return image_paths
 
 
 @app.route("/upload_image", methods=["POST"])
 def upload_image():
+    request_begin = time.time()
     """Endpoint for Flask server to send an image to this device."""
     try:
-        filepath = save_image()
-    except DetectionException as e:
-        return get_error_response(e)
-
-    object_prompt, action = get_objects_from_json()
-
-    # Run model on image
-    try:
-        begin = time.time()
-        boxes, boxes_scaled, logits, phrases = detector(
+        filepath = save_image_from_request()[0]
+        found_center, action = detect_objects_in_image(
+            detector,
             filepath,
-            # prompt="helmet . computer . bottle . table . mouse . keyboard . controller . knob . button . microwave",
-            prompt=object_prompt,
-            threshold=0.1,
-            draw=True,
+            app.config["CROP_THRESHOLD"],
+            app.config["OBJECT_THRESHOLD"],
         )
-        print(f"Model time: {time.time() - begin} s")
-    except Exception as e:
+    except DetectionException as e:
         return get_error_response(f"{type(e).__name__}: {e}")
-
-    # try:
-    #     best_box = determine_best_box(boxes_scaled, logits, phrases)
-    # except DetectionException as e:
-    #     return get_error_response(e)
 
     delete_images(filepath)
 
-    detector_response = {
-        "phrases": phrases,
-        "boxes": boxes_scaled.tolist(),
-        "confidence": logits.tolist(),
-        "action": action,
-        "threshold": 1000,
-    }
-    # detector_response = {"center": boxes_scaled, "action": action}
-    return detector_response, 200
+    detector_response = {"center": found_center, "action": action}
+    # print(json.dumps(detector_response, indent=4))
+    print(f"Request time: {time.time() - request_begin} s")
+    return detector_response
 
 
-# MAIN
-configure_folder(detector.HOME)
-app.run(host="0.0.0.0", debug=True, use_reloader=False)
+@app.route("/test_hello", methods=["GET"])
+def test_hello():
+    return {"test": "hello"}
+
+
+@app.route("/parse_instruction", methods=["POST"])
+def instruction_to_json():
+    """Parse instruction. Must call 'get_instructions' endpoint first."""
+    assert len(instructions) > 0
+    try:
+        filepaths = save_image_from_request()
+        # Output will be written to parser_output.json
+        instruction_gpt_calls(
+            detector, instructions, app.config["CROP_THRESHOLD"], filepaths
+        )
+    except DetectionException as e:
+        return get_error_response(f"{type(e).__name__}: {e}")
+
+    delete_images(*filepaths)
+
+    return {}
+
+
+@app.route("/get_instructions", methods=["GET"])
+def get_instructions():
+    """Get list of instructions from 'instructions.txt'"""
+    instructions.clear()
+    instructions.extend(get_instructions_from_file())
+    return jsonify(instructions)
+
+
+# Run flask server
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", debug=True, use_reloader=False)

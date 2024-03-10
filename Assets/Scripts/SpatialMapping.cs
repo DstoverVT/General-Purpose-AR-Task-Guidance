@@ -35,7 +35,7 @@ public class SpatialMapping : MonoBehaviour
         visualController = GameObject.Find("VisualController").GetComponent<VisualController>();
         meshManager = GameObject.Find("ARMeshManager").GetComponent<ARMeshManager>();
         rayLine = GetComponent<LineRenderer>();
-        sphere = GameObject.Find("IntersectionPoint");
+        //sphere = GameObject.Find("IntersectionPoint");
 
         if(cameraTest)
         {
@@ -126,7 +126,7 @@ public class SpatialMapping : MonoBehaviour
              * As 3D map of objects for each instruction
              * 
              * Then, display objects for the current instruction. */
-            sphere.transform.position = raycastHit.point;
+            //sphere.transform.position = raycastHit.point;
             visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType);
         }
         else
