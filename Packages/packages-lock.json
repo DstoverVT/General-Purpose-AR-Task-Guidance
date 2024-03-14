@@ -26,6 +26,12 @@
       "source": "local-tarball",
       "dependencies": {}
     },
+    "com.microsoft.mrtk.tts.windows": {
+      "version": "file:MixedReality/com.microsoft.mrtk.tts.windows-1.0.1.tgz",
+      "depth": 0,
+      "source": "local-tarball",
+      "dependencies": {}
+    },
     "com.unity.ai.navigation": {
       "version": "1.1.5",
       "depth": 0,
@@ -355,6 +361,15 @@
         "com.unity.inputsystem": "1.6.1",
         "com.unity.textmeshpro": "3.0.6",
         "com.unity.xr.interaction.toolkit": "2.3.0"
+      }
+    },
+    "org.mixedrealitytoolkit.windowsspeech": {
+      "version": "file:MixedReality/org.mixedrealitytoolkit.windowsspeech-3.0.1.tgz",
+      "depth": 0,
+      "source": "local-tarball",
+      "dependencies": {
+        "com.microsoft.mrtk.tts.windows": "1.0.1",
+        "org.mixedrealitytoolkit.core": "3.0.0"
       }
     },
     "com.unity.modules.ai": {

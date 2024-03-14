@@ -1,8 +1,26 @@
 {
-    "objects": [
-        "lower front dial"
-    ],
-    "actions": [
-        "twist"
-    ]
+    "0": {
+        "objects": [
+            "front bottom fan button"
+        ],
+        "actions": [
+            "twist"
+        ]
+    },
+    "1": {
+        "objects": [
+            "bottom right cabinet handle"
+        ],
+        "actions": [
+            "pull"
+        ]
+    },
+    "2": {
+        "objects": [
+            "right side black bar"
+        ],
+        "actions": [
+            "pull"
+        ]
+    }
 }

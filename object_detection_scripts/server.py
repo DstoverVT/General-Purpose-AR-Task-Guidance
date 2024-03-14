@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from object_detection import (
     ObjectDetectionInterface,
     DetectionException,
@@ -15,13 +15,13 @@ from werkzeug.utils import secure_filename
 
 
 app = Flask(__name__)
-# Run object detection once on test image since first takes way longer (caching)
 app.config["DETECTOR"] = ObjectDetectionInterface()
 detector: ObjectDetectionInterface = app.config["DETECTOR"]
+# Run object detection once on test image since first takes way longer (caching)
 detector.prime_detection_with_test()
 # Configure other app config data
 app.config["CROP_THRESHOLD"] = 0.2
-app.config["OBJECT_THRESHOLD"] = 0.3
+app.config["OBJECT_THRESHOLD"] = 0.2
 # Structure to hold instructions input in 'instructions.txt'
 app.config["INSTRUCTIONS"] = []
 instructions: list[str] = app.config["INSTRUCTIONS"]
@@ -29,6 +29,7 @@ instructions: list[str] = app.config["INSTRUCTIONS"]
 
 @app.after_request
 def print_response(response):
+    """Called after request finishes, simply prints results."""
     print(response.get_data(as_text=True))
     print(response.status_code)
     return response
@@ -39,11 +40,10 @@ def get_error_response(msg: str):
     return {"message": msg}, 500
 
 
-def save_image_from_request() -> list[str]:
+def save_image_from_request() -> str:
     """Checks and saves image from HTTP post request.
 
     Returns: filepath string of image
-    Throws: DetectionException if an error occurs
     """
     HEADER = "image"
 
@@ -65,23 +65,26 @@ def save_image_from_request() -> list[str]:
     filename = timestamp + secure_filename(image.filename)
     image.save(filename)
 
-    image_paths = []
-    image_paths.append(filename)
-
-    return image_paths
+    return filename
 
 
 @app.route("/upload_image", methods=["POST"])
 def upload_image():
     request_begin = time.time()
-    """Endpoint for Flask server to send an image to this device."""
+    """Endpoint for Flask server to send an image and run object detection on it.
+    
+    Returns:
+    - Sends back response containing center (x, y) of detected object and action to perform
+    """
     try:
-        filepath = save_image_from_request()[0]
+        filepath = save_image_from_request()
+        instruction_num: int = int(request.form["instructionNum"])
         found_center, action = detect_objects_in_image(
             detector,
             filepath,
             app.config["CROP_THRESHOLD"],
             app.config["OBJECT_THRESHOLD"],
+            instruction_num,
         )
     except DetectionException as e:
         return get_error_response(f"{type(e).__name__}: {e}")
@@ -96,33 +99,41 @@ def upload_image():
 
 @app.route("/test_hello", methods=["GET"])
 def test_hello():
+    """Simple request for testing."""
     return {"test": "hello"}
 
 
 @app.route("/parse_instruction", methods=["POST"])
 def instruction_to_json():
-    """Parse instruction. Must call 'get_instructions' endpoint first."""
-    assert len(instructions) > 0
+    """Parse instruction. Must call 'get_instructions' endpoint first.
+
+    Adds output to 'parser_output.json' file. If successful, returns empty response.
+    """
     try:
-        filepaths = save_image_from_request()
+        filepath = save_image_from_request()
+        instruction_num: int = int(request.form["instructionNum"])
         # Output will be written to parser_output.json
         instruction_gpt_calls(
-            detector, instructions, app.config["CROP_THRESHOLD"], filepaths
+            detector,
+            instructions,
+            instruction_num,
+            app.config["CROP_THRESHOLD"],
+            filepath,
         )
-    except DetectionException as e:
+    except (DetectionException, KeyError) as e:
         return get_error_response(f"{type(e).__name__}: {e}")
 
-    delete_images(*filepaths)
+    delete_images(filepath)
 
     return {}
 
 
 @app.route("/get_instructions", methods=["GET"])
 def get_instructions():
-    """Get list of instructions from 'instructions.txt'"""
+    """Get list of instructions from 'instructions.txt' and add to instructions list."""
     instructions.clear()
     instructions.extend(get_instructions_from_file())
-    return jsonify(instructions)
+    return {"instructionsList": instructions}
 
 
 # Run flask server

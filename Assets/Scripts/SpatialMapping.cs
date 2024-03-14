@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.Windows.WebCam;
 using UnityEngine.XR.ARFoundation;
 
+/** Manages raycasting against spatial mesh. */ 
 public class SpatialMapping : MonoBehaviour
 {
     public Camera mainCamera;
@@ -27,6 +28,12 @@ public class SpatialMapping : MonoBehaviour
     private Camera testCameraComponent;
     [SerializeField]
     private Transform cameraOffset;
+    [SerializeField]
+    private GameObject spatialMeshPrefab;
+    [SerializeField]
+    private Material meshWireframe;
+    [SerializeField]
+    private Material meshTransparent;
 
 
     // Start is called before the first frame update
@@ -147,6 +154,11 @@ public class SpatialMapping : MonoBehaviour
     public void toggleTestRaycast()
     {
         raycastTest = !raycastTest;
+
+        /* Change spatial mesh prefab to have wireframe material */
+        MeshRenderer renderer = spatialMeshPrefab.GetComponent<MeshRenderer>();
+        renderer.material = raycastTest ? meshWireframe : meshTransparent;
+                
         //if(raycastTest)
         //{
         //    StoreState();

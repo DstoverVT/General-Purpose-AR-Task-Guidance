@@ -20,12 +20,8 @@ class ObjectDetection:
         """Setup GroundingDINO model.
 
         Prereq: Requires GroundingDINO repo to be cloned to current working directory and weights to be downloaded.
+        See 'GroundingDINO_HL_research.ipynb' for setup
         """
-        # self.HOME = os.path.dirname(os.path.abspath(__file__))
-        # print(f"Home path: {self.HOME}")
-        # self.CONFIG_PATH = os.path.join(
-        #     self.HOME, "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-        # )
         self.CONFIG_PATH = (
             "GroundingDINO/groundingdino/config/GroundingDINO_SwinB_cfg.py"
         )
@@ -38,11 +34,15 @@ class ObjectDetection:
         self.model = load_model(self.CONFIG_PATH, self.WEIGHTS_PATH)
 
     def setup_new_detection(self):
+        """Setup new variables, called before each detection to clear variables."""
         self.detection_path: str = None
-        self.images = None
+        self.images: tuple[np.ndarray, torch.Tensor] = None
 
     def _model_inference(
-        self, images: tuple[np.array, torch.Tensor], text_prompt: str, threshold: float
+        self,
+        images: tuple[np.ndarray, torch.Tensor],
+        text_prompt: str,
+        threshold: float,
     ):
         """Perform object dectection on image to get boxes, logits, and phrases."""
         print("Running model inference on image")
@@ -75,7 +75,7 @@ class ObjectDetection:
         return boxes, boxes_scaled, logits, phrases
 
     def save_detection_to_plot(self, image):
-        # Show output image with boxes and centers
+        """Save image to file system (current directory) with unique name."""
         annotated_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         plt.figure(figsize=(16, 16))
         plt.imshow(annotated_frame)
@@ -91,7 +91,7 @@ class ObjectDetection:
         self,
         model_output: tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]],
     ):
-        """Draw bounding boxes on input image."""
+        """Draw bounding boxes on input image and save plot."""
         boxes, boxes_scaled, logits, phrases = model_output
 
         annotated_frame = annotate(
@@ -109,18 +109,12 @@ class ObjectDetection:
 
         self.save_detection_to_plot(annotated_frame)
 
-        # Color best box with a green dot
-        # _, best_box, _ = max(zip(logits, boxes_scaled, phrases), key=lambda x: x[0])
-        # annotated_frame = cv2.circle(
-        #     annotated_frame,
-        #     (int(best_box[0]), int(best_box[1])),
-        #     10,
-        #     (0, 255, 0),
-        #     -1,
-        # )
+    def _get_image(self, image_path: str) -> tuple[np.ndarray, torch.Tensor]:
+        """Load image for object detection.
 
-    def _get_image(self, image_path: str):
-        """Load image for object detection. Uses image relative path"""
+        Returns:
+        - Tuple of (raw image Numpy array, transformed image for object detection)
+        """
         if not os.path.exists(image_path):
             raise FileExistsError("Detector Error: Image file does not exist.")
 
@@ -133,8 +127,12 @@ class ObjectDetection:
         prompt: str,
         threshold: float,
         draw: bool = False,
-    ):
-        """Detect objects on image using prompt and threshold for model."""
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+        """Detect objects on image using prompt and threshold for model.
+
+        Returns:
+        - Model output from object detection on image from image_path with prompt and threshold
+        """
         self.images = self._get_image(image_path)
         model_output = self._model_inference(self.images, prompt, threshold)
         if draw:
@@ -149,8 +147,12 @@ class ObjectDetectionInterface:
         self.detector = ObjectDetection()
         # self.HOME = self.detector.HOME
 
-    def _check_contains_box(self, box, other_output):
-        """Check if box contains any of other_boxes. Return true if so."""
+    def _check_contains_box(
+        self,
+        box: torch.Tensor,
+        other_output: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, str]],
+    ):
+        """Check if box contains any boxes in other_output. Return true if so."""
         x, y, w, h = box
         x_low, y_low = (x - w / 2, y - h / 2)
         x_high, y_high = (x + w / 2, y + h / 2)
@@ -173,7 +175,7 @@ class ObjectDetectionInterface:
         - detection_output: All the boxes from detection in the form (boxes_unscaled, boxes, confidences, phrases)
 
         Returns:
-            - Best box in the form of (box_unscaled, box, confidence, phrase)
+        - Best box in the form of (box_unscaled, box, confidence, phrase)
         """
         # Contains only boxes that don't contain other boxes inside it
         boxes_unscaled, boxes, confidences, phrases = detection_output
@@ -211,8 +213,17 @@ class ObjectDetectionInterface:
 
         return best_results
 
-    def region_containing_all_boxes(self, boxes):
-        """Output box containing all bounding boxes in image."""
+    def region_containing_all_boxes(
+        self, boxes: torch.Tensor
+    ) -> tuple[float, float, float, float]:
+        """Output region containing all bounding boxes in image.
+
+        Args:
+        - boxes: Tensor containing list of all boxes as (x, y, w, h) Tensors (center and width/height)
+
+        Returns:
+        - Tuple of (x1, y1, x2, y2) which is top-left coordinate of region (x1, y1) and bottom-right (x2, y2)
+        """
         top_left_coords = [(x - w / 2, y - h / 2) for x, y, w, h in boxes]
         bottom_right_coords = [(x + w / 2, y + h / 2) for x, y, w, h in boxes]
 
@@ -224,7 +235,9 @@ class ObjectDetectionInterface:
 
         return (smallest_x, smallest_y, largest_x, largest_y)
 
-    def crop_image_to_box(self, box, image_path) -> str:
+    def crop_image_to_box(
+        self, box: tuple[float, float, float, float], image_path: str
+    ) -> str:
         """Crops an image to a bounding box.
 
         Args:
@@ -246,8 +259,19 @@ class ObjectDetectionInterface:
         cropped_image.save(new_filename)
         return new_filename
 
-    def draw_detection_output(self, kept_output, best_output):
-        """Add a circle to current detection plot."""
+    def draw_detection_output(
+        self,
+        kept_output: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor, str]],
+        best_output: tuple[torch.Tensor, torch.Tensor, torch.Tensor, str],
+    ):
+        """Save plot with detected bounding boxes and blue center dots drawn. Best box has green center dot.
+
+        Args:
+        - kept_output: List of all boxes to draw, each entry containing a tuple of (box_unscaled, box, logit, phrase)
+        - best_output: Best box found of same format as above.
+
+        Saves plot to file system.
+        """
         # Add to current plot from ObjectDetector
         boxes_unscaled, boxes, logits, phrases = zip(*kept_output)
         boxes_unscaled = torch.stack(boxes_unscaled)
@@ -281,7 +305,11 @@ class ObjectDetectionInterface:
         self.detector.save_detection_to_plot(annotated_frame)
 
     def run_object_detection(
-        self, filepath, text_prompt, box_threshold, draw_raw=False
+        self,
+        filepath: str,
+        text_prompt: str,
+        box_threshold: float,
+        draw_raw: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
         """Run GroundingDINO on file path specified.
         Args:
@@ -306,13 +334,28 @@ class ObjectDetectionInterface:
         return result
 
     def run_object_detection_with_crop(
-        self, filepath, text_prompt, first_threshold, second_threshold
+        self,
+        filepath: str,
+        text_prompt: str,
+        first_threshold: float,
+        second_threshold: float,
     ):
         """Steps:
         - Runs detection on input image
         - Crops to region containing all bounding boxes
         - Runs detection again on cropped image
         - Outputs highest confidence result
+
+        Args:
+        - filepath: Image path to run object detection on
+        - text_prompt: Prompt to send to GroundingDINO for detection
+        - first_threshold: Bounding box lower confidence for object detection in first (cropping) pass
+        - second_threshold: Bounding box lower confidence for object detection in final pass
+
+        Returns:
+        - center: (x, y) coordinate in cropped image of result from object detection
+        - top_left_coord: Top left (x, y) coordinate of cropped image for calculating position in original image
+        - cropped_image_path: String path of saved cropped image
         """
         # First pass saves raw detection output to plot
         _, boxes_pass1, _, _ = self.run_object_detection(
@@ -353,6 +396,7 @@ class ObjectDetectionInterface:
         return center, top_left_coord, cropped_image_path
 
     def prime_detection_with_test(self):
+        """Runs object detection on dummy image with dummy prompt (since first run always takes longer)."""
         test_filepath = "data/HL_coffee_pic.jpg"
         self.run_object_detection(test_filepath, "test", 0.1)
 

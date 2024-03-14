@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using System.Collections.Generic;
 using MixedReality.Toolkit.UX;
 
+/** Manages image -> object detection call to Python server. */
 public class ObjectDetector : MonoBehaviour
 {
     private PhotoCapture photoCaptureObject;
@@ -27,6 +28,8 @@ public class ObjectDetector : MonoBehaviour
 
     [SerializeField]
     private GameObject inputField;
+    [SerializeField]
+    private string detectorEndpoint = "upload_image";
 
 
     // Root myDeserializedClass = JsonConvert.DeserializeObject<Root>(myJsonResponse);
@@ -87,18 +90,6 @@ public class ObjectDetector : MonoBehaviour
         return VisualController.Hand.Error;
     }
 
-    /* Should move this to Python script so don't need to build when changing it */
-    //int GetBestBoxIndex(List<float> confidences, List<List<float>> boxes, int threshold)
-    //{
-    //    var bestBox = confidences
-    //        .Zip(boxes, (confidence, box) => new { Confidence = confidence, Box = box })
-    //        .Select((item, index) => new { item.Confidence, item.Box, Index = index })
-    //        .Where(box => box.Box[2] < threshold && box.Box[3] < threshold)
-    //        .OrderByDescending(box => box.Confidence)
-    //        .FirstOrDefault();
-
-    //    return bestBox.Index;
-    //}
 
     private void handleDetectionResults(DetectionResults results)
     {
@@ -140,8 +131,8 @@ public class ObjectDetector : MonoBehaviour
         return new Vector2(x_coord, y_coord);
     }
 
-    /* Called on button press right now. */
-    public void SaveImage()
+    /* Called on button press right now. Now by voice command in AppController */
+    public void RunObjectDetector()
     {
         Debug.Log("Starting photo capture, hold head where you want to take picture...");
         startPhotoTime = Time.realtimeSinceStartup;
@@ -207,14 +198,16 @@ public class ObjectDetector : MonoBehaviour
             File.WriteAllBytes(imagePath, imageBytes);
             //List<byte> imageBytes = new List<byte>();
             //frame.CopyRawImageDataIntoBuffer(imageBytes);
-            StartCoroutine(UploadImage());
-            photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
+            StartCoroutine(UploadImage(imagePath, InstructionController.currentInstruction));
         }
         else
         {
             Debug.Log("Failed to save Photo to memory");
         }
+
+        photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
     }
+
 
     void OnStoppedPhotoMode(PhotoCapture.PhotoCaptureResult result)
     {
@@ -223,7 +216,7 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    string GetServerURL()
+    public string GetServerURL()
     {
         string text = inputField.GetComponent<MRTKUGUIInputField>().text;
         //Debug.Log("Server URL" + text);
@@ -231,13 +224,12 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    IEnumerator UploadImage()
+    IEnumerator UploadImage(string imagePath, int currInstruction)
     {
         startRequestTime = Time.realtimeSinceStartup;
         ////Debug.Log("Upload image Coroutine.");
-        string endpoint = "upload_image";
         string serverURL = GetServerURL();
-        string requestURL = $"http://{serverURL}/{endpoint}";
+        string requestURL = $"http://{serverURL}/{detectorEndpoint}";
 
         WWWForm form = new WWWForm();
         if(!File.Exists(imagePath))
@@ -247,6 +239,12 @@ public class ObjectDetector : MonoBehaviour
 
         form.AddBinaryData("image", File.ReadAllBytes(imagePath), "hololens_image.jpg");
         
+        if(currInstruction > InstructionController.instructions.Count)
+        {
+            throw new ArgumentOutOfRangeException("Current instruction (" + currInstruction + ") should not be greater than number of instructions");
+        }
+        form.AddField("instructionNum", currInstruction);
+
         using(UnityWebRequest request = UnityWebRequest.Post(requestURL, form))
         {
             yield return request.SendWebRequest();

@@ -1,5 +1,6 @@
 using UnityEngine;
 
+/** Manages hand 3D visuals from app. */
 public class VisualController : MonoBehaviour
 {
     [SerializeField]
