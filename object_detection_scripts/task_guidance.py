@@ -21,14 +21,10 @@ def get_objects_from_json(json_data: dict[str, list[str]]) -> tuple[str, str]:
 
     For example, if object list is "objects": ["one", "two", "three"], outputs "one . two . three"
     """
-    try:
-        object_list = json_data["objects"]
-        object_prompt = " . ".join(object_list)
-        action_list = json_data["actions"]
-        first_action = action_list[0]
-    # Catch if objects and actions fields don't exist in JSON
-    except (ValueError, FileNotFoundError) as e:
-        raise DetectionException(e)
+    object_list = json_data["objects"]
+    object_prompt = " . ".join(object_list)
+    action_list = json_data["actions"]
+    first_action = action_list[0]
 
     return object_prompt, first_action
 
@@ -75,16 +71,14 @@ def detect_objects_in_image(
     return original_image_box_center, action
 
 
-def get_instructions_from_file() -> list[str]:
+def get_instructions_from_file(clear_output: bool = False) -> list[str]:
     """Reads 'instructions.txt' and outputs list of instructions from the file."""
-    try:
-        instruction_file = "instructions.txt"
-        with open(instruction_file, "r") as f:
-            lines = f.readlines()
-        # Clear parser output JSON file at beginning of new program
+    instruction_file = "instructions.txt"
+    with open(instruction_file, "r") as f:
+        lines = f.readlines()
+    # Clear parser output JSON file at beginning of new program
+    if clear_output:
         open(OUTPUT_FILE, "w").close()
-    except FileNotFoundError as e:
-        raise DetectionException(f"{e}. Error reading 'instructions.txt'")
 
     if len(lines) == 0:
         raise DetectionException("Need at least one instruction in instructions.txt")
@@ -195,35 +189,33 @@ def instruction_gpt_calls(
 
     Output is returned in JSON format.
     """
-    try:
-        instruction = instructions[instruction_num]
-        print(f"Parsing instruction: {instruction}...")
-        # Get previous info to give to GPT for conversation history
-        previous_instructions, previous_responses = get_previous_gpt_outputs(
-            instructions
+    instruction = instructions[instruction_num]
+    print(f"Parsing instruction: {instruction}...")
+    # Get previous info to give to GPT for conversation history
+    previous_instructions, previous_responses = get_previous_gpt_outputs(instructions)
+
+    json_output: dict[str, list[str]] = parse_instruction(
+        instruction, image_file, previous_instructions, previous_responses
+    )
+    print("-------- GPT OUTPUT 1: ----------")
+    print(json.dumps(json_output, indent=4))
+
+    valid_actions = False
+    # Call GPT until the action it outputs is valid (in possible_actions)
+    while not valid_actions:
+        cropped_image = get_cropped_image(detector, threshold, image_file, json_output)
+        # Give second pass higher detail to be sure outputs are correct
+        parsed_output = parse_instruction(
+            instruction,
+            cropped_image,
+            previous_instructions,
+            previous_responses,
+            high_detail=False,
         )
+        print("-------- GPT OUTPUT 2: ----------")
+        print(json.dumps(parsed_output, indent=4))
 
-        json_output: dict[str, list[str]] = parse_instruction(
-            instruction, image_file, previous_instructions, previous_responses
-        )
-        print("-------- GPT OUTPUT 1: ----------")
-        print(json.dumps(json_output, indent=4))
-
-        valid_actions = False
-        # Call GPT until the action it outputs is valid (in possible_actions)
-        while not valid_actions:
-            cropped_image = get_cropped_image(
-                detector, threshold, image_file, json_output
-            )
-            parsed_output = parse_instruction(
-                instruction, cropped_image, previous_instructions, previous_responses
-            )
-            print("-------- GPT OUTPUT 2: ----------")
-            print(json.dumps(parsed_output, indent=4))
-
-            # Add output to parser output JSON file
-            valid_actions = add_json_to_output_file(parsed_output, instruction_num)
-    except Exception as e:
-        raise DetectionException(f"{e}. Error with instruction parser (GPT)")
+        # Add output to parser output JSON file
+        valid_actions = add_json_to_output_file(parsed_output, instruction_num)
 
     # delete_images(cropped_image)

@@ -35,6 +35,11 @@ def print_response(response):
     return response
 
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return {"error": f"{type(e).__name__}: {e}"}, 500
+
+
 def get_error_response(msg: str):
     """Creates HTTP response for an error case."""
     return {"message": msg}, 500
@@ -76,18 +81,15 @@ def upload_image():
     Returns:
     - Sends back response containing center (x, y) of detected object and action to perform
     """
-    try:
-        filepath = save_image_from_request()
-        instruction_num: int = int(request.form["instructionNum"])
-        found_center, action = detect_objects_in_image(
-            detector,
-            filepath,
-            app.config["CROP_THRESHOLD"],
-            app.config["OBJECT_THRESHOLD"],
-            instruction_num,
-        )
-    except DetectionException as e:
-        return get_error_response(f"{type(e).__name__}: {e}")
+    filepath = save_image_from_request()
+    instruction_num: int = int(request.form["instructionNum"])
+    found_center, action = detect_objects_in_image(
+        detector,
+        filepath,
+        app.config["CROP_THRESHOLD"],
+        app.config["OBJECT_THRESHOLD"],
+        instruction_num,
+    )
 
     delete_images(filepath)
 
@@ -109,19 +111,16 @@ def instruction_to_json():
 
     Adds output to 'parser_output.json' file. If successful, returns empty response.
     """
-    try:
-        filepath = save_image_from_request()
-        instruction_num: int = int(request.form["instructionNum"])
-        # Output will be written to parser_output.json
-        instruction_gpt_calls(
-            detector,
-            instructions,
-            instruction_num,
-            app.config["CROP_THRESHOLD"],
-            filepath,
-        )
-    except (DetectionException, KeyError) as e:
-        return get_error_response(f"{type(e).__name__}: {e}")
+    filepath = save_image_from_request()
+    instruction_num: int = int(request.form["instructionNum"])
+    # Output will be written to parser_output.json
+    instruction_gpt_calls(
+        detector,
+        instructions,
+        instruction_num,
+        app.config["CROP_THRESHOLD"],
+        filepath,
+    )
 
     delete_images(filepath)
 
@@ -129,11 +128,20 @@ def instruction_to_json():
 
 
 @app.route("/get_instructions", methods=["GET"])
-def get_instructions():
+def get_instructions(clear_output: bool = False):
     """Get list of instructions from 'instructions.txt' and add to instructions list."""
     instructions.clear()
-    instructions.extend(get_instructions_from_file())
-    return {"instructionsList": instructions}
+    instructions.extend(get_instructions_from_file(clear_output))
+    return instructions
+
+
+@app.route("/new_instructions", methods=["GET"])
+def new_instructions():
+    """Get new instructions and clear old outputs (clears parser JSON file).
+
+    Clearing the JSON output file means that the operator phase must occur again.
+    """
+    return get_instructions(clear_output=True)
 
 
 # Run flask server

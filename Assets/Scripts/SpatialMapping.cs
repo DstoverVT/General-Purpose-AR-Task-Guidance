@@ -10,17 +10,13 @@ public class SpatialMapping : MonoBehaviour
 {
     public Camera mainCamera;
     public static int spatialMeshLayer = 3;
-    public static int storedMeshLayer = 6;
 
-    private VisualController visualController;
+    private AppController app;
     private LineRenderer rayLine;
-    private GameObject sphere;
     private bool raycastTest = false;
     private bool cameraTest = false;
     private Camera lastSavedCamera;
     private ARMeshManager meshManager;
-    //private List<MeshFilter> lastSavedMesh;
-    private float timer = 0f;
 
     [SerializeField]
     private VisualController.Hand testHandType;
@@ -39,10 +35,9 @@ public class SpatialMapping : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        visualController = GameObject.Find("VisualController").GetComponent<VisualController>();
+        app = GameObject.Find("AppController").GetComponent<AppController>();
         meshManager = GameObject.Find("ARMeshManager").GetComponent<ARMeshManager>();
         rayLine = GetComponent<LineRenderer>();
-        //sphere = GameObject.Find("IntersectionPoint");
 
         if(cameraTest)
         {
@@ -53,10 +48,16 @@ public class SpatialMapping : MonoBehaviour
     // Update is called once per frame
     private void Update()
     {
-        //if (raycastTest)
-        //{
-        //    timer += Time.deltaTime;
-        //}
+        /* Handle when to display raycast pink line. */
+        if(app.appState == AppController.AppState.USER && rayLine.enabled && !raycastTest)
+        {
+            rayLine.positionCount = 0;
+            rayLine.enabled = false;
+        }
+        else if(app.appState != AppController.AppState.USER && !rayLine.enabled)
+        {
+            rayLine.enabled = true;
+        }
 
         if(cameraTest)
         {
@@ -66,6 +67,7 @@ public class SpatialMapping : MonoBehaviour
 
     void LateUpdate()
     {
+        /* Testing raycast with camera state. */
         //if (raycastTest)
         //{
         //    if (timer > 5f)
@@ -83,34 +85,79 @@ public class SpatialMapping : MonoBehaviour
 
         if(raycastTest)
         {
+            if(!rayLine.enabled)
+            {
+                rayLine.enabled = true;
+            }
             testRaycast();
         }
-
-        
     }
 
-    //public void setMeshTracking()
-    //{
-    //    meshManager.SetActive(!meshManager.activeSelf);
-    //}
+
+    private void AddToVisualsMap(int instructionNum, GameObject[] actionVisuals)
+    {
+        /* Create initial List if instruction index does not exist yet. */
+        if (instructionNum >= app.visualsMap.Count)
+        {
+            int numToAdd = (instructionNum + 1) - app.visualsMap.Count;
+            for (int i = 0; i < numToAdd; i++)
+            {
+                app.visualsMap.Add(new List<GameObject>());
+            }
+        }
+
+        app.visualsMap[instructionNum].AddRange(actionVisuals);
+    }
 
 
-    public void PlaceHandFromMesh(Vector2 object2DLocation, VisualController.Hand handType, int raycastLayer, bool useStoredState)
+    /** Adapted from PlaceHandFromMesh to store result in visualsMap. */
+    public void StoreMapFromMesh(int instructionNum, Vector2 object2DLocation, VisualController.Hand handType)
     {
         /* Attempt to raycast see where it hits the spatial mesh . */
         RaycastHit raycastHit;
 
-        int layerMask = 1 << raycastLayer;
-
-        /* Raycast at middle of screen. */
-        //Vector2 object2DLocation = new Vector2(mainCamera.pixelWidth / 2, mainCamera.pixelHeight / 2);
+        int layerMask = 1 << spatialMeshLayer;
 
         Ray ray;
+        /* Need to use custom camera with settings from the Hololens PV camera. */
+        ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
+        //ray = mainCamera.ScreenPointToRay(object2DLocation);
+        /* Draw line to show where ray is cast. */
+        rayLine.positionCount = 2;
+        rayLine.SetPositions(new Vector3[] { ray.origin, ray.origin + ray.direction * 5 });
+        /* 3D raycast */ 
+        if (Physics.Raycast(ray, out raycastHit, Mathf.Infinity, layerMask))
+        {
+            /* Store hand visual at position of mesh intersection.
+                
+             * Instruction list:
+             * [[GameObject 1, GameObject 2], [..], ...]
+             */
+            GameObject[] visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType, false);
+            AddToVisualsMap(instructionNum, visuals);
+        }
+        else
+        {
+            /* Place hand right in front of user by default */
+            Debug.LogWarning("No depth was found.");
+        }
+            
+    }
+
+
+    public void TestPlaceHandFromMesh(Vector2 object2DLocation, VisualController.Hand handType, bool useStoredState)
+    {
+        /* Attempt to raycast see where it hits the spatial mesh . */
+        RaycastHit raycastHit;
+
+        int layerMask = 1 << spatialMeshLayer;
+
+        Ray ray;
+        /* Need to use custom camera with settings from the Hololens PV camera. */
         if (useStoredState && lastSavedCamera != null)
         {
             Debug.Log("Using last saved camera");
             ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
-            /* Need to use custom camera with settings from the Hololens PV camera. */
         }
         else
         {
@@ -122,32 +169,38 @@ public class SpatialMapping : MonoBehaviour
         /* 3D raycast */ 
         if (Physics.Raycast(ray, out raycastHit, Mathf.Infinity, layerMask))
         {
-            /* Place hand visual at position of mesh intersection. */
-            //Debug.Log("Found depth value");
-
-            /* Instead of placing hand, system should store:
-             * Instruction: {
-             *  Action 1: Vector3
-             *  Action 2: Vector3
-             * }
-             * As 3D map of objects for each instruction
-             * 
-             * Then, display objects for the current instruction. */
-            //sphere.transform.position = raycastHit.point;
-            visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType);
+            bool test = !useStoredState;
+            GameObject[] visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType, test);
+            /* Place hand visuals right away */
+            if (visuals[0] != null)
+            {
+                foreach (GameObject visual in visuals)
+                {
+                    visual.SetActive(true);
+                }
+            }
         }
         else
         {
-            visualController.TestPlaceHand(handType);
+            /* Place hand right in front of user by default */
+            app.visualController.TestPlaceHand(handType);
             Debug.Log("No depth was found.");
         }
     }
 
 
-    private void testRaycast()
+    public void testRaycast()
     {
         Vector2 object2DLocation = new Vector2(mainCamera.pixelWidth / 2, mainCamera.pixelHeight / 2);
-        PlaceHandFromMesh(object2DLocation, testHandType, spatialMeshLayer, false);
+        TestPlaceHandFromMesh(object2DLocation, testHandType, false);
+        //StoreMapFromMesh(app.instructionController.currentInstruction, object2DLocation, testHandType);
+
+        /* Change mesh to use wireframe while debugging. */
+        foreach(MeshFilter mesh in meshManager.meshes)
+        {
+            MeshRenderer renderer = mesh.gameObject.GetComponent<MeshRenderer>();
+            renderer.material = meshWireframe;
+        }
     }
 
 
@@ -155,10 +208,20 @@ public class SpatialMapping : MonoBehaviour
     {
         raycastTest = !raycastTest;
 
-        /* Change spatial mesh prefab to have wireframe material */
-        MeshRenderer renderer = spatialMeshPrefab.GetComponent<MeshRenderer>();
-        renderer.material = raycastTest ? meshWireframe : meshTransparent;
-                
+        if(!raycastTest)
+        {
+            /* Change mesh back to transparent after debugging. */
+            foreach(MeshFilter mesh in meshManager.meshes)
+            {
+                MeshRenderer renderer = mesh.gameObject.GetComponent<MeshRenderer>();
+                renderer.material = meshTransparent;
+            }
+
+            /* Disable test hand when done with testing. */
+            app.visualController.DisableTestVisuals(testHandType);
+        }
+
+
         //if(raycastTest)
         //{
         //    StoreState();
@@ -177,14 +240,8 @@ public class SpatialMapping : MonoBehaviour
         Vector3 camPosition = matrix.MultiplyPoint(Vector3.zero);
         Quaternion camRotation = Quaternion.LookRotation(-matrix.GetColumn(2), matrix.GetColumn(1));
 
-        //Vector3 scale;
-        //scale.x = matrix.GetColumn(0).magnitude;
-        //scale.y = matrix.GetColumn(1).magnitude;
-        //scale.z = matrix.GetColumn(2).magnitude;
-
         lastSavedCamera.transform.rotation = camRotation;
         lastSavedCamera.transform.position = camPosition;
-        //lastSavedCamera.transform.localScale = scale;
     }
 
 
@@ -216,24 +273,12 @@ public class SpatialMapping : MonoBehaviour
         lastSavedCamera.enabled = false;
 
         Debug.Log("Stored camera state, can move head now");
-        //lastSavedMesh = new List<MeshFilter>(meshManager.meshes);
-
-        /* Change mesh to layer 6 for future raycast. */
-        //foreach(MeshFilter mesh in lastSavedMesh)
-        //{
-        //    mesh.gameObject.layer = storedMeshLayer;
-        //}
     }
 
     public void ClearState()
     {
         Destroy(lastSavedCamera.gameObject);
         lastSavedCamera = null;
-        /* Change mesh back to layer 3. */
-        //foreach(MeshFilter mesh in lastSavedMesh)
-        //{
-        //    mesh.gameObject.layer = storedMeshLayer;
-        //}
     }
 
     public Camera GetLastSavedCamera()

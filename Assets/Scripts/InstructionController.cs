@@ -7,36 +7,47 @@ using Newtonsoft.Json;
 using System.Collections;
 using UnityEngine.Windows.WebCam;
 using System.IO;
-using UnityEngine.Android;
 
 /** Gets and stores instructions from Python server. */
 public class InstructionController : MonoBehaviour
 {
-    private ObjectDetector objectDetector;
+    private AppController appController;
     private PhotoCapture photoCaptureObject;
     private string imagePath;
     private Resolution imageResolution;
+    /** Data structure that holds path to images for each instruction as such:
+     * [["path1.jpg", "path2.jpg"], ["path3.jpg], ...]
+     * This is stored in a Hololens text file as JSON. 
+     * Each entry in the outer array corresponds to a different instruction. */
+    public List<List<string>> instructionImagePaths;
 
     [SerializeField]
     private string instructionsEndpoint = "get_instructions";
     [SerializeField]
+    private string newInstructionsEndpoint = "new_instructions";
+    [SerializeField]
     private string parserEndpoint = "parse_instruction";
+    /** This file is stored on Hololens to contain the filenames of the pictures taken by the operator for the last
+     * instruction set. They are stored on each line in a text file, and overwritten when new instruction pictures are taken. */
+    [SerializeField]
+    private string fileStoragePath;
 
-
-    [Serializable]
-    private class Instructions
-    {
-        public List<string> instructionsList { get; set; }
-    }
-
-    public static List<string> instructions { get; set; }
-    public static int currentInstruction = 0;
-    public bool instructionsReceived { get; set; } = false;
+    public List<string> instructions { get; set; }
+    public int currentInstruction = 0;
 
     // Start is called before the first frame update
     void Start()
     {
-        objectDetector = GameObject.Find("ObjectDetector").GetComponent<ObjectDetector>(); 
+        fileStoragePath = Path.Combine(Application.persistentDataPath, "instruction_pictures.json");
+        appController = GameObject.Find("AppController").GetComponent<AppController>(); 
+
+        if(!File.Exists(fileStoragePath))
+        {
+            /* Create file to store image paths if does not exist on Hololens. */
+            using (FileStream f = File.Create(fileStoragePath)) { }
+        }
+
+        instructionImagePaths = new List<List<string>>();
     }
 
     // Update is called once per frame
@@ -46,24 +57,31 @@ public class InstructionController : MonoBehaviour
     }
 
 
-    public void StartGetInstructions()
+    public void StartGetInstructions(bool operator_changed)
     {
-        instructionsReceived = false;
-        StartCoroutine(GetInstructions());
+        StartCoroutine(GetInstructions(operator_changed));
     }
 
 
     public void RunInstructionParser()
     {
         Debug.Log("Starting photo capture, hold head where you want to take picture...");
+        /* Test */
+        if (Application.isEditor)
+        {
+            string testPath = Path.Combine(Application.dataPath, "Materials", "humidifier.jpg");
+            AddImagePath(currentInstruction, testPath);
+        }
+        StartCoroutine(appController.UpdatePictureText(true)); 
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
     }
 
 
-    IEnumerator GetInstructions()
+    IEnumerator GetInstructions(bool operator_changed)
     {
-        string serverURL = objectDetector.GetServerURL();
-        string requestURL = $"http://{serverURL}/{instructionsEndpoint}";
+        string serverURL = appController.objectDetector.GetServerURL();
+        string endpoint = operator_changed ? newInstructionsEndpoint : instructionsEndpoint;
+        string requestURL = $"http://{serverURL}/{endpoint}";
 
         using (UnityWebRequest request = UnityWebRequest.Get(requestURL))
         {
@@ -77,11 +95,17 @@ public class InstructionController : MonoBehaviour
             }
             else
             {
-                Instructions output = JsonConvert.DeserializeObject<Instructions>(request.downloadHandler.text);
-                instructions = output.instructionsList;
+                instructions = JsonConvert.DeserializeObject<List<string>>(request.downloadHandler.text);
                 Debug.Log("Instructions: " + instructions);
                 /* Once instructions are received, set flag. */
-                instructionsReceived = true;
+                if (operator_changed)
+                {
+                    appController.onNewInstructionsReceived.Invoke();
+                }
+                else
+                {
+                    appController.onInstructionsReceived.Invoke();
+                }
             }
         }
     }
@@ -89,7 +113,7 @@ public class InstructionController : MonoBehaviour
 
     IEnumerator SendPictureToParser(string currImagePath, int currInstruction)
     {
-        string serverURL = objectDetector.GetServerURL();
+        string serverURL = appController.objectDetector.GetServerURL();
         string requestURL = $"http://{serverURL}/{parserEndpoint}";
 
         WWWForm form = new WWWForm();
@@ -122,6 +146,7 @@ public class InstructionController : MonoBehaviour
             }
                 
         } 
+
     }
 
 
@@ -148,9 +173,8 @@ public class InstructionController : MonoBehaviour
             DateTime now = DateTime.Now;
             string fileTime = string.Format("{0:MM-dd_HH-mm-ss}", now);
             string filename = "HL_capture_" + fileTime + ".jpg";
-            imagePath = System.IO.Path.Combine(Application.persistentDataPath, filename);
+            imagePath = Path.Combine(Application.persistentDataPath, filename);
 
-            //photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
             photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
         }
         else
@@ -159,12 +183,109 @@ public class InstructionController : MonoBehaviour
         }
     }
 
+
+    void OnCapturedPhotoToMemory(PhotoCapture.PhotoCaptureResult result, PhotoCaptureFrame frame)
+    {
+        if (result.success)
+        {
+            StartCoroutine(appController.UpdatePictureText(false));
+            /* Save photo to disk */
+            Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
+            frame.UploadImageDataToTexture(imageTexture);
+            byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
+            Destroy(imageTexture);
+            File.WriteAllBytes(imagePath, imageBytes);
+            AddImagePath(currentInstruction, imagePath); 
+            StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
+        }
+        else
+        {
+            Debug.Log("Failed to save Photo to memory");
+        }
+
+        photoCaptureObject.StopPhotoModeAsync(OnStoppedPhotoMode);
+    }
+
+
+    /** Add image path to corrent instruction List. */
+    void AddImagePath(int instructionNum, string filePath)
+    {
+        /* Create initial List if instruction index does not exist yet. */
+        if (instructionNum >= instructionImagePaths.Count)
+        {
+            int numToAdd = (instructionNum + 1) - instructionImagePaths.Count;
+            for (int i = 0; i < numToAdd; i++)
+            {
+                instructionImagePaths.Add(new List<string>());
+            }
+        }
+
+        instructionImagePaths[instructionNum].Add(filePath);
+    }
+
+    
+    /** Store image paths in JSON file on Hololens. */
+    public void StoreImagePathsJson()
+    {
+        string pathJson = JsonConvert.SerializeObject(instructionImagePaths, Formatting.Indented);
+        File.WriteAllText(fileStoragePath, pathJson);
+    }
+
+
+    /** Load image file paths from JSON file into List object. */
+    public void LoadImagePathsJson()
+    {
+        string fileText = File.ReadAllText(fileStoragePath);
+        instructionImagePaths = JsonConvert.DeserializeObject<List<List<string>>>(fileText);
+    }
+
+
+    /** Clear contents of storage file, for new instruction set.*/
+    public void ClearStorageFile()
+    {
+        /* Delete all files contained in storage file. */
+        string fileText = File.ReadAllText(fileStoragePath);
+        /* Only do so if current file is not empty. */
+        if (!fileText.Equals(string.Empty))
+        {
+            List<List<string>> files = JsonConvert.DeserializeObject<List<List<string>>>(fileText);
+
+            foreach (List<string> list in files)
+            {
+                foreach (string filename in list)
+                {
+                    /* Delete all files. */
+                    try
+                    {
+                        if (!Application.isEditor)
+                        {
+                            File.Delete(filename);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.Log("File could not be deleted: " + e.Message);
+                    }
+                }
+            }
+
+            /* Clear storage file contents. */
+            File.WriteAllText(fileStoragePath, string.Empty);
+        }
+
+        /* Clear instruction images. */
+        instructionImagePaths.Clear();
+    }
+
+
     void OnCapturedPhotoToDisk(PhotoCapture.PhotoCaptureResult result)
     {
         if (result.success)
         {
+            StartCoroutine(appController.UpdatePictureText(false));
             Debug.Log("Saved Picture To Disk, can move head now");
             Debug.Log("Sending picture to GPT...");
+            AddImagePath(currentInstruction, imagePath); 
             StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
         }
         else
@@ -181,4 +302,20 @@ public class InstructionController : MonoBehaviour
         photoCaptureObject.Dispose();
         photoCaptureObject = null;
     }
+
+/*
+    public int GetNumOfInstructionImages()
+    {
+        int total = 0;
+        if (instructionImagePaths.Count > 0)
+        {
+            foreach (List<string> images in instructionImagePaths)
+            {
+                total += images.Count;
+            }
+        }
+
+        return total;
+    }
+*/
 }

@@ -34,6 +34,7 @@ def parse_instruction(
     image_path: str,
     previous_instructions: list[str],
     previous_outputs: list[str],
+    high_detail: bool = False,
 ) -> dict[str, list[str]]:
     """Function to use GPT-4V to parse an instruction given an image of the environment."""
     base64_image = encode_image(image_path)
@@ -102,7 +103,7 @@ def parse_instruction(
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": "low",
+                        f"detail": "high" if high_detail else "low",
                     },
                 },
             ],

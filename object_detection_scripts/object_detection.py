@@ -320,16 +320,13 @@ class ObjectDetectionInterface:
         """
         # Run model on image
         self.detector.setup_new_detection()
-        try:
-            result = self.detector(
-                filepath,
-                # prompt="helmet . computer . bottle . table . mouse . keyboard . controller . knob . button . microwave",
-                text_prompt,
-                box_threshold,
-                draw_raw,
-            )
-        except Exception as e:
-            raise DetectionException(f"{type(e).__name__}: {e}")
+        result = self.detector(
+            filepath,
+            # prompt="helmet . computer . bottle . table . mouse . keyboard . controller . knob . button . microwave",
+            text_prompt,
+            box_threshold,
+            draw_raw,
+        )
 
         return result
 

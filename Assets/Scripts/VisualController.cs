@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /** Manages hand 3D visuals from app. */
@@ -11,6 +12,10 @@ public class VisualController : MonoBehaviour
     private GameObject handPull;
     [SerializeField]
     private GameObject handPickup;
+
+    [SerializeField]
+    private GameObject intersectionObject;
+    
 
     public enum Hand
     {
@@ -50,10 +55,11 @@ public class VisualController : MonoBehaviour
         
     }
 
+
     /**
      * location: In world coordinates already. 
      */
-    public void PlaceHandVisual(Vector3 location, Vector3 normal, Hand type)
+    public GameObject[] PlaceHandVisual(Vector3 location, Vector3 normal, Hand type, bool test)
     {
         float[] distanceFromCenter = new float[(int)Hand.NumHands];
         distanceFromCenter[(int)Hand.Press] = 0.20f;
@@ -65,22 +71,50 @@ public class VisualController : MonoBehaviour
         float dist = distanceFromCenter[(int)type];
 
         /* Pickup motion should always be upward instead of facing normal */
+        Vector3 handPosition;
+        Quaternion handRotation;
         if(type == Hand.Pickup)
         {
             Vector3 offset = Vector3.up * dist;
-            handVisual.transform.position = location + offset;
+            handPosition = location + offset;
             /* Rotate hand towards ground. */
-            handVisual.transform.rotation = Quaternion.LookRotation(Vector3.right, Vector3.up);
+            handRotation = Quaternion.LookRotation(Vector3.right, Vector3.up);
         }
         /* Place hand at location along normal to surface. */
         else 
         {
             Vector3 offset = normal * dist;
-            handVisual.transform.position = location + offset;
+            handPosition = location + offset;
             /* Rotate hand towards surface. */
-            handVisual.transform.rotation = Quaternion.LookRotation(-normal);
+            handRotation = Quaternion.LookRotation(-normal);
         }
-        handVisual.SetActive(true);
+
+        /* Place intersection point object */
+        Quaternion intersectionRotation = Quaternion.LookRotation(-normal);
+        /* Put square on its side to make a diamond shape. */
+        Quaternion offCenter = Quaternion.Euler(0, 0, 45);
+
+        GameObject[] visuals = new GameObject[2];
+        /* Use single GameObject during testing */
+        if (test)
+        {
+            handVisual.transform.position = handPosition;
+            handVisual.transform.rotation = handRotation;
+            handVisual.SetActive(true);
+
+            intersectionObject.transform.position = location;
+            intersectionObject.transform.rotation = intersectionRotation * offCenter;
+            intersectionObject.SetActive(true);
+            /* No need to return objects if testing, keep visuals empty. */
+        }
+        else
+        {
+            visuals = new GameObject[2];
+            visuals[0] = Instantiate(handVisual, handPosition, handRotation);
+            visuals[1] = Instantiate(intersectionObject, location, intersectionRotation * offCenter);
+        }
+
+        return visuals;
     }
 
     public void TestPlaceHand(Hand handType)
@@ -88,13 +122,14 @@ public class VisualController : MonoBehaviour
         Vector3 location = new Vector3(0, 0, 0.3f);
         Vector3 camForward = mainCamera.TransformDirection(Vector3.forward);
         location = mainCamera.TransformPoint(location);
-        PlaceHandVisual(location, -camForward, handType);
+        PlaceHandVisual(location, -camForward, handType, true);
     }
 
-    public void DisableVisual(Hand handType)
+    public void DisableTestVisuals(Hand handType)
     {
         GameObject handVisual = hands[(int)handType];
         handVisual.SetActive(false);
+        intersectionObject.SetActive(false);
     }
 
     //public void controlPickupHand(Vector3 source, Vector3 destination, PickupState state, float velocity)

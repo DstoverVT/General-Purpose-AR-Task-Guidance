@@ -7,7 +7,7 @@ def send_test_image():
     begin = time.time()
     DETECTOR_URL = "http://172.21.134.52:5000/upload_image"
     INSTRUCTION_URL = "http://172.21.134.52:5000/parse_instruction"
-    GET_INSTRUCTION_URL = "http://172.21.134.52:5000/get_instructions"
+    GET_INSTRUCTION_URL = "http://172.21.134.52:5000/new_instructions"
     # DETECTOR_URL = "http://127.0.0.1:5000/upload_image"
     # INSTRUCTION_URL = "http://127.0.0.1:5000/parse_instruction"
 
@@ -17,7 +17,7 @@ def send_test_image():
     num_instructions = len(instructions["instructionsList"])
 
     # Test file path
-    filepath = os.path.join("data", "office_test", "lock.jpg")
+    filepath = os.path.join("data", "HL_door.jpg")
 
     # Test instruction parsing (operator mode)
     for num in range(num_instructions):

@@ -15,6 +15,7 @@ public class ObjectDetector : MonoBehaviour
 {
     private PhotoCapture photoCaptureObject;
     private SpatialMapping spatialMapper;
+    private AppController appController;
     private Resolution imageResolution;
     private string imagePath;
     private float startPhotoTime = 0f;
@@ -41,7 +42,7 @@ public class ObjectDetector : MonoBehaviour
     }
 
     [Serializable]
-    private class UnityDetectionEvent : UnityEvent<DetectionResults>
+    private class UnityDetectionEvent : UnityEvent<DetectionResults, int>
     {}
 
     /* Action basically creates a delegate (function holder) and event in one, with parameter DetectionResults. */
@@ -56,6 +57,7 @@ public class ObjectDetector : MonoBehaviour
             OnDetectionComplete = new UnityDetectionEvent();
         }
         spatialMapper = GameObject.Find("SpatialMapping").GetComponent<SpatialMapping>();
+        appController = GameObject.Find("AppController").GetComponent<AppController>();
         OnDetectionComplete.AddListener(handleDetectionResults);
 
         //Debug.Log("Camera resolution: " + spatialMapper.GetLastSavedCamera().pixelWidth + "x" + spatialMapper.GetLastSavedCamera().pixelHeight);
@@ -91,7 +93,7 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    private void handleDetectionResults(DetectionResults results)
+    private void handleDetectionResults(DetectionResults results, int instructionNum)
     {
         if (results.center.Count > 0 && results.action.Length > 0)
         {
@@ -104,7 +106,8 @@ public class ObjectDetector : MonoBehaviour
             }
             else
             {
-                spatialMapper.PlaceHandFromMesh(objectLocation, visual, SpatialMapping.spatialMeshLayer, true);
+                //spatialMapper.TestPlaceHandFromMesh(objectLocation, visual, true);
+                spatialMapper.StoreMapFromMesh(instructionNum, objectLocation, visual);
                 spatialMapper.ClearState();
             }
         }
@@ -120,8 +123,6 @@ public class ObjectDetector : MonoBehaviour
     private Vector2 TransformBoxToScreenPixels(Vector2 imagePixels)
     {
         /* Image taken from Hololens has different resolution than view does */
-        //float widthScale = (float)spatialMapper.GetLastSavedCamera().pixelWidth / (float)imageResolution.width;
-        //float heightScale = (float)spatialMapper.GetLastSavedCamera().pixelHeight / (float)imageResolution.height;
         float widthScale = (float)spatialMapper.GetLastSavedCamera().pixelWidth / (float)imageResolution.width;
         float heightScale = (float)spatialMapper.GetLastSavedCamera().pixelHeight / (float)imageResolution.height;
         float x_coord = imagePixels.x * widthScale;
@@ -136,6 +137,7 @@ public class ObjectDetector : MonoBehaviour
     {
         Debug.Log("Starting photo capture, hold head where you want to take picture...");
         startPhotoTime = Time.realtimeSinceStartup;
+        StartCoroutine(appController.UpdatePictureText(true));
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
     }
 
@@ -143,18 +145,10 @@ public class ObjectDetector : MonoBehaviour
     {
         photoCaptureObject = captureObject;
 
-        //int cameraWidth = spatialMapper.GetLastSavedCamera().pixelWidth;
-        //int cameraHeight = spatialMapper.GetLastSavedCamera().pixelHeight;
-        //Debug.Log("Unity Camera Width: " + cameraWidth);
-        //Debug.Log("Unity Camera Height: " + cameraHeight);
-
         Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
-        //Resolution cameraResolution = PhotoCapture.SupportedResolutions
-        //    .FirstOrDefault((res) => res.width == cameraWidth && res.height == cameraHeight);
         imageResolution = photoResolution;
         //Debug.Log("Image Width: " + photoResolution.width);
         //Debug.Log("Image Height: " + photoResolution.height);
-
         CameraParameters c = new CameraParameters();
         c.hologramOpacity = 0.0f;
         c.cameraResolutionWidth = photoResolution.width;
@@ -171,7 +165,7 @@ public class ObjectDetector : MonoBehaviour
             DateTime now = DateTime.Now;
             string fileTime = string.Format("{0:MM-dd_HH-mm-ss}", now);
             string filename = "HL_capture_" + fileTime + ".jpg";
-            imagePath = System.IO.Path.Combine(Application.persistentDataPath, filename);
+            imagePath = Path.Combine(Application.persistentDataPath, filename);
 
             //photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
             photoCaptureObject.TakePhotoAsync(OnCapturedPhotoToMemory);
@@ -187,18 +181,17 @@ public class ObjectDetector : MonoBehaviour
     {
         if (result.success)
         {
+            StartCoroutine(appController.UpdatePictureText(false));
             Debug.Log($"Photo capture time: {Time.realtimeSinceStartup - startPhotoTime} s");
-            //Debug.Log("Saved Photo to disk with path: " + imagePath);
+            /* Saving frame to be able to extract camera details for spatial mapper. */
             spatialMapper.StoreState(frame);
-            /* Save photo to disk */
             Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
             frame.UploadImageDataToTexture(imageTexture);
             byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
             Destroy(imageTexture);
+            /* Save photo to disk */
             File.WriteAllBytes(imagePath, imageBytes);
-            //List<byte> imageBytes = new List<byte>();
-            //frame.CopyRawImageDataIntoBuffer(imageBytes);
-            StartCoroutine(UploadImage(imagePath, InstructionController.currentInstruction));
+            StartCoroutine(UploadImage(imagePath, appController.instructionController.currentInstruction));
         }
         else
         {
@@ -239,7 +232,7 @@ public class ObjectDetector : MonoBehaviour
 
         form.AddBinaryData("image", File.ReadAllBytes(imagePath), "hololens_image.jpg");
         
-        if(currInstruction > InstructionController.instructions.Count)
+        if(currInstruction > appController.instructionController.instructions.Count)
         {
             throw new ArgumentOutOfRangeException("Current instruction (" + currInstruction + ") should not be greater than number of instructions");
         }
@@ -263,7 +256,7 @@ public class ObjectDetector : MonoBehaviour
                 /* Parse into JSON and send to a function not in Coroutine to parse boxes using Unity event. */
                 startDrawingTime = Time.realtimeSinceStartup;
                 DetectionResults output = JsonConvert.DeserializeObject<DetectionResults>(request.downloadHandler.text);
-                OnDetectionComplete.Invoke(output);
+                OnDetectionComplete.Invoke(output, currInstruction);
             }
         }
 
