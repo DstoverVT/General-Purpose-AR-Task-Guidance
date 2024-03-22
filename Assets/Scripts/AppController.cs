@@ -15,7 +15,11 @@ public class AppController : MonoBehaviour
     private int instructionPictureNum = 0;
     private int scanTotalPictureNum = 0;
     //private int totalPicturesToScan = 0;
-    private Queue<Sprite> imageSprites = new Queue<Sprite>();
+    //private Queue<Sprite> imageSprites = new Queue<Sprite>();
+    /* Holds sprite for each picture in each instruction. 
+     * Probably should have used a dictionary similar to storing instruction outputs in JSON on server.
+     * So then I wouldn't have to keep everything in order, could label them with instruction num key. */
+    private List<List<Sprite>> instructionSprites = new List<List<Sprite>>();
 
     [SerializeField]
     private TextMeshProUGUI instructionLabel;
@@ -48,6 +52,9 @@ public class AppController : MonoBehaviour
      * Where each outer list entry corresponds to a different instruction
      */
     public List<List<GameObject>> visualsMap { get; set; }
+    /* Handle updating instructions. */
+    public List<int> updatedInstructions = new List<int>();
+    public bool updateMode = false;
 
     public enum AppState
     {
@@ -102,7 +109,10 @@ public class AppController : MonoBehaviour
     {
         DisplayCurrentInstruction();
         /* Reset instruction pictures from last operator phase. */
-        instructionController.ClearStorageFile();
+        if (!updateMode)
+        {
+            instructionController.ClearStorageFile();
+        }
         Debug.Log("OPERATOR state");
         ChangeAppState(AppState.OPERATOR);
     }
@@ -135,18 +145,16 @@ public class AppController : MonoBehaviour
     }
 
 
-    public IEnumerator UpdatePictureText(bool takingPicture)
+    public IEnumerator UpdateCenterText(bool processing, string message)
     {
-        if(takingPicture)
+        if(processing)
         {
-            string pictureText = "Taking picture, hold your head still.";
-            centerText.SetText(pictureText);
+            centerText.SetText(message);
             centerText.gameObject.SetActive(true);
         }
         else
         {
-            string pictureText = "Done";
-            centerText.SetText(pictureText);
+            centerText.SetText(message);
             yield return new WaitForSeconds(2);
             /* Disable label after 2 seconds of showing Done */
             centerText.gameObject.SetActive(false);
@@ -160,14 +168,18 @@ public class AppController : MonoBehaviour
         /* Cannot go into operator mode while in scanning phase. */
         if (appState != AppState.USER_PRESCAN)
         {
+            /* If coming from USER state, need to update instructions instead of replace them. */
             if(appState == AppState.USER)
             {
-                /* Clear visuals from last instructions. */
-                ClearVisualsMap();
+                /* Signal that instructions will be updated. */
+                HideVisualsMap();
+                updateMode = true;
+                updatedInstructions.Clear();
+                instructionController.StartGetInstructions(true, updateMode);
                 scanImage.sprite = null;
             }
 
-            instructionController.StartGetInstructions(true);
+            instructionController.StartGetInstructions(true, updateMode);
             instructionController.currentInstruction = 0;
         }
     }
@@ -185,7 +197,7 @@ public class AppController : MonoBehaviour
     }
 
 
-    /** Called by voice command "Operator Picture" during OPERATOR state. */
+    /** Called by voice command "Operator Image" during OPERATOR state. */
     private void HandleOperator()
     {
         if(appState == AppState.OPERATOR)
@@ -202,15 +214,15 @@ public class AppController : MonoBehaviour
         {
             if (appState == AppState.INIT)
             {
-                instructionController.StartGetInstructions(false);
+                instructionController.StartGetInstructions(false, updateMode);
             }
             else
             {
                 /* Save image paths taken during operator mode. */
                 instructionController.StoreImagePathsJson();
                 Debug.Log("USER PRESCAN state");
-                PrepareUserScan();
                 ChangeAppState(AppState.USER_PRESCAN);
+                PrepareUserScan();
             }
 
         }
@@ -229,14 +241,81 @@ public class AppController : MonoBehaviour
 
     private void PrepareUserScan()
     {
-        StartCoroutine(LoadAllImageTextures());
+        /* Only load updated images if updating. */
+        if (updateMode)
+        {
+            StartCoroutine(LoadUpdatedImageTextures());
+        }
+        /* Load all images if first operator run. */
+        else
+        {
+            StartCoroutine(LoadAllImageTextures());
+        }
         instructionController.currentInstruction = 0;
         /* Reset scan indices. */
         instructionPictureNum = 0;
         //totalPicturesToScan = instructionController.GetNumOfInstructionImages();
         scanTotalPictureNum = 0;
-        StartCoroutine(DisplayCurrentPicture());
+        if (updateMode)
+        {
+            if (updatedInstructions.Count > 0) 
+            {
+                instructionController.currentInstruction = updatedInstructions[0];
+                StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
+            }
+            else
+            {
+                Debug.Log("Did not update any instructions as expected.");
+                /* Skip scanning phase if updated nothing. */
+                DonePrescan();
+            }
+        }
+        else
+        {
+            StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
+        }
         scanImage.gameObject.SetActive(true);
+    }
+
+
+    /** Returns false if there is not another valid updated instruction after the current one. 
+     * Also ensures that the instruction is in the image paths list, so its image can be retrieved.
+     */
+    private bool GoToNextUpdatedInstruction()
+    {
+        /* Manage what the next updated instruction is during update mode */
+        if (updateMode)
+        {
+            int currInstructionIdx = updatedInstructions.IndexOf(instructionController.currentInstruction);
+            if (currInstructionIdx != -1 && (currInstructionIdx + 1) < updatedInstructions.Count)
+            {
+                /* Go to updated instruction after the current one. */
+                instructionController.currentInstruction = updatedInstructions[currInstructionIdx + 1];
+                /* Ensure instruction is in paths list. */
+                if (instructionController.currentInstruction >= instructionController.instructionImagePaths.Count)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+        /* Simply advance current instruction by 1 if not in update mode. */
+        else
+        {
+            if ((instructionController.currentInstruction + 1) < instructionController.instructionImagePaths.Count)
+            {
+                instructionController.currentInstruction++;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 
@@ -245,26 +324,24 @@ public class AppController : MonoBehaviour
     {
         if (appState == AppState.USER_PRESCAN)
         {
-            /* Iterate through each inner instruction image list to know which current instruction app is on for object detection. */
             List<string> currImages = instructionController.instructionImagePaths[instructionController.currentInstruction];
             /* Try to advance to next picture. */
             /* Advance to next instruction for scanning if done with current one. */
             if ((instructionPictureNum + 1) >= currImages.Count)
             {
                 /* Ensure there is another instruction. */
-                if ((instructionController.currentInstruction + 1) < instructionController.instructionImagePaths.Count)
+                if (GoToNextUpdatedInstruction())
                 {
-                    instructionController.currentInstruction++;
                     instructionPictureNum = 0;
                     scanTotalPictureNum++;
-                    StartCoroutine(DisplayCurrentPicture());
+                    StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
                 }
             }
             else
             {
                 instructionPictureNum++;
                 scanTotalPictureNum++;
-                StartCoroutine(DisplayCurrentPicture());
+                StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
             }
 
             //if ((scanTotalPictureNum + 1) < totalPicturesToScan)
@@ -276,7 +353,7 @@ public class AppController : MonoBehaviour
     }
 
     
-    /** Called by voice command "Scan Picture" in USER_PRESCAN state. */
+    /** Called by voice command "Scan Image" in USER_PRESCAN state. */
     private void UserPrescan()
     {
         if (appState == AppState.USER_PRESCAN)
@@ -303,10 +380,11 @@ public class AppController : MonoBehaviour
 
     /** Coroutine that pushes the front of the Texture Queue as the current image to display.
      * If the queue is empty, wait for an element to be pushed. */
-    IEnumerator DisplayCurrentPicture()
+    IEnumerator DisplayPicture(int currentInstruction, int currentPicture)
     {
-        /* Wait for an image to be pushed onto texture queue before displaying. */
-        yield return new WaitUntil(() => imageSprites.Count > 0);
+        /* Wait for current instruction picture to have a valid sprite. */
+        yield return new WaitUntil(() => (currentInstruction < instructionSprites.Count) &&
+                                         (currentPicture < instructionSprites[currentInstruction].Count));
         /* Get texture for current image. */
         //string currImagePath = instructionController.instructionImagePaths[instructionController.currentInstruction][instructionPictureNum];
         ///* Read file into Texture */
@@ -316,22 +394,40 @@ public class AppController : MonoBehaviour
 
         ///* Create sprite from texture and set in GameObject to display. */
         //Sprite imageSprite = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
-        
-        scanImage.sprite = imageSprites.Dequeue();
+
+        scanImage.sprite = instructionSprites[currentInstruction][currentPicture];
         /* Set text with image number. */
         instructionLabel.SetText($"Scan Image {scanTotalPictureNum + 1}:");
     }
 
 
+    /** Load all images from image paths. Creates new instructionSprites list. */
     IEnumerator LoadAllImageTextures()
     {
-        centerText.SetText("Loading images, please wait.");
-        centerText.gameObject.SetActive(true);
+        ///* Create picture lists for all instructions and pictures if don't exist */
+        //if (instructionController.instructionImagePaths.Count > instructionSprites.Count)
+        //{
+        //    int numToAdd = instructionController.instructionImagePaths.Count - instructionSprites.Count;
+        //    for (int i = 0; i < numToAdd; i++)
+        //    {
+        //        instructionSprites.Add(new List<Sprite>());
+        //    }
+        //}
+        //for(int i = 0; i < instructionController.instructionImagePaths.Count; i++)
+        //{
+        //    int numPictures = instructionController.instructionImagePaths
+        //}
+
+        instructionSprites.Clear();
+
+        StartCoroutine(UpdateCenterText(true, "Loading images, please wait."));
         /* Convert all images to textures and store them in Queue. */
-        foreach(List<string> instructionImages in instructionController.instructionImagePaths)
+        for (int instruction = 0; instruction < instructionController.instructionImagePaths.Count; instruction++)
         {
-            foreach(string path in instructionImages)
+            for(int picture = 0; picture < instructionController.instructionImagePaths[instruction].Count; picture++)
             {
+                instructionSprites.Add(new List<Sprite>());
+                string path = instructionController.instructionImagePaths[instruction][picture];
                 string fileURI = "file:///" + path;
                 /* Use Unity's GetTexture async operation. */
                 using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(fileURI))
@@ -346,12 +442,45 @@ public class AppController : MonoBehaviour
                     {
                         Texture2D tex = DownloadHandlerTexture.GetContent(request);
                         Sprite sprite = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
-                        imageSprites.Enqueue(sprite);
+                        instructionSprites[instruction].Add(sprite);
                     }
                 }
             }
         }
-        centerText.gameObject.SetActive(false);
+        StartCoroutine(UpdateCenterText(false, "Done"));
+    }
+
+
+    IEnumerator LoadUpdatedImageTextures()
+    {
+        StartCoroutine(UpdateCenterText(true, "Loading images, please wait."));
+
+        foreach(int instructionNum in updatedInstructions)
+        {
+            /* Clear old pictures from updated instruction. */
+            instructionSprites[instructionNum].Clear();
+            foreach (string path in instructionController.instructionImagePaths[instructionNum])
+            {
+                string fileURI = "file:///" + path;
+                /* Use Unity's GetTexture async operation. */
+                using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(fileURI))
+                {
+                    yield return request.SendWebRequest();
+
+                    if (request.result != UnityWebRequest.Result.Success)
+                    {
+                        Debug.LogError($"Could not convert an image to texture: {path}");
+                    }
+                    else
+                    {
+                        Texture2D tex = DownloadHandlerTexture.GetContent(request);
+                        Sprite sprite = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
+                        instructionSprites[instructionNum].Add(sprite);
+                    }
+                }
+            }
+        }
+        StartCoroutine(UpdateCenterText(false, "Done"));
     }
 
 
@@ -404,7 +533,7 @@ public class AppController : MonoBehaviour
 
 
     /** Clear visuals and set all gameobjects inactive. */
-    private void ClearVisualsMap()
+    private void HideVisualsMap()
     {
         foreach(List<GameObject> instructionVisuals in visualsMap)
         {
@@ -412,10 +541,7 @@ public class AppController : MonoBehaviour
             {
                 /* Set visuals inactive and get rid of them. */
                 visual.SetActive(false);
-                Destroy(visual);
             }
         }
-
-        visualsMap.Clear();
     }
 }

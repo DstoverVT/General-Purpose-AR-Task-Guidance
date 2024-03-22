@@ -10,6 +10,7 @@ from task_guidance import (
     detect_objects_in_image,
     instruction_gpt_calls,
     get_instructions_from_file,
+    updated_instructions,
 )
 from werkzeug.utils import secure_filename
 
@@ -25,6 +26,8 @@ app.config["OBJECT_THRESHOLD"] = 0.2
 # Structure to hold instructions input in 'instructions.txt'
 app.config["INSTRUCTIONS"] = []
 instructions: list[str] = app.config["INSTRUCTIONS"]
+# Flag to determine whether to update instructions
+app.config["UPDATE"] = False
 
 
 @app.after_request
@@ -120,11 +123,20 @@ def instruction_to_json():
         instruction_num,
         app.config["CROP_THRESHOLD"],
         filepath,
+        app.config["UPDATE"],
     )
 
     delete_images(filepath)
 
     return {}
+
+
+@app.route("/update_instructions", methods=["GET"])
+def update_instructions():
+    """Get list of instructions from 'instructions.txt' and add to instructions list."""
+    app.config["UPDATE"] = True
+    updated_instructions.clear()
+    return get_instructions()
 
 
 @app.route("/get_instructions", methods=["GET"])
@@ -141,6 +153,7 @@ def new_instructions():
 
     Clearing the JSON output file means that the operator phase must occur again.
     """
+    app.config["UPDATE"] = False
     return get_instructions(clear_output=True)
 
 

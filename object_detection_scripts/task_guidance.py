@@ -6,6 +6,7 @@ from object_detection import DetectionException, ObjectDetectionInterface
 
 
 OUTPUT_FILE = "parser_output.json"
+updated_instructions = []
 
 
 def delete_images(*image_paths):
@@ -108,7 +109,7 @@ def get_cropped_image(
 
 
 def add_json_to_output_file(
-    json_data: dict[str, list[str]], instruction_num: int
+    json_data: dict[str, list[str]], instruction_num: int, update: bool
 ) -> bool:
     """Add a parsed instruction (json_data) to output parser json file containing all parsed instructions.
 
@@ -136,15 +137,20 @@ def add_json_to_output_file(
 
     # Check if key (instruction number) already exists
     if num in current_json:
-        # If so, append json to current instruction
-        curr_instruction = current_json[num]
-        for obj in json_data["objects"]:
-            curr_instruction["objects"].append(obj)
-        for action in json_data["actions"]:
-            if action not in possible_actions:
-                print("**Re-running GPT, it output an invalid action")
-                return False
-            curr_instruction["actions"].append(action)
+        # Only update instruction once, keep track of whether it was updated already
+        if update and instruction_num not in updated_instructions:
+            current_json[num] = json_data
+            updated_instructions.append(instruction_num)
+        else:
+            # If so, append json to current instruction
+            curr_instruction = current_json[num]
+            for obj in json_data["objects"]:
+                curr_instruction["objects"].append(obj)
+            for action in json_data["actions"]:
+                if action not in possible_actions:
+                    print("**Re-running GPT, it output an invalid action")
+                    return False
+                curr_instruction["actions"].append(action)
     else:
         # New instruction, add output to json
         current_json[num] = json_data
@@ -155,7 +161,7 @@ def add_json_to_output_file(
     return True
 
 
-def get_previous_gpt_outputs(instructions: list[str]):
+def get_previous_gpt_outputs(instructions: list[str], instruction_num: int):
     """Returns previous responses from parser output JSON file."""
     with open(OUTPUT_FILE, "r") as file:
         # Make sure file isn't empty
@@ -166,9 +172,14 @@ def get_previous_gpt_outputs(instructions: list[str]):
         else:
             return [], []
 
-    previous_instructions = [instructions[int(num)] for num in all_outputs.keys()]
-    # Store string version of each instruction response
-    previous_outputs = [json.dumps(output) for output in all_outputs.values()]
+    previous_instructions = []
+    previous_outputs = []
+    for num, output in all_outputs.items():
+        # Only append previous instructions
+        if int(num) < instruction_num:
+            previous_instructions.append(instructions[int(num)])
+            # Store string version of each instruction response
+            previous_outputs.append(json.dumps(output))
 
     return previous_instructions, previous_outputs
 
@@ -179,6 +190,7 @@ def instruction_gpt_calls(
     instruction_num: int,
     threshold: float,
     image_file: str,
+    update: bool,
 ):
     """Sends an instruction and image to be parsed by GPT-4V.
 
@@ -186,13 +198,16 @@ def instruction_gpt_calls(
     - instruction: String instruction to parse
     - threshold: Threshold for cropping image using GroundingDINO
     - image_file: Image to send to GPT-4V
+    - update: True if should replace current instruction output in output file, else False
 
     Output is returned in JSON format.
     """
     instruction = instructions[instruction_num]
     print(f"Parsing instruction: {instruction}...")
     # Get previous info to give to GPT for conversation history
-    previous_instructions, previous_responses = get_previous_gpt_outputs(instructions)
+    previous_instructions, previous_responses = get_previous_gpt_outputs(
+        instructions, instruction_num
+    )
 
     json_output: dict[str, list[str]] = parse_instruction(
         instruction, image_file, previous_instructions, previous_responses
@@ -216,6 +231,6 @@ def instruction_gpt_calls(
         print(json.dumps(parsed_output, indent=4))
 
         # Add output to parser output JSON file
-        valid_actions = add_json_to_output_file(parsed_output, instruction_num)
+        valid_actions = add_json_to_output_file(parsed_output, instruction_num, update)
 
     # delete_images(cropped_image)

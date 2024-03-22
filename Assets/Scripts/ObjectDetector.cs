@@ -137,7 +137,7 @@ public class ObjectDetector : MonoBehaviour
     {
         Debug.Log("Starting photo capture, hold head where you want to take picture...");
         startPhotoTime = Time.realtimeSinceStartup;
-        StartCoroutine(appController.UpdatePictureText(true));
+        StartCoroutine(appController.UpdateCenterText(true, "Taking a picture, hold your head still."));
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
     }
 
@@ -181,7 +181,7 @@ public class ObjectDetector : MonoBehaviour
     {
         if (result.success)
         {
-            StartCoroutine(appController.UpdatePictureText(false));
+            StartCoroutine(appController.UpdateCenterText(false, "Done"));
             Debug.Log($"Photo capture time: {Time.realtimeSinceStartup - startPhotoTime} s");
             /* Saving frame to be able to extract camera details for spatial mapper. */
             spatialMapper.StoreState(frame);

@@ -83,7 +83,9 @@ def parse_instruction(
         messages.append(
             {
                 "role": "user",
-                "content": [{"type": "text", "text": f"Instruction: {prev_instr}"}],
+                "content": [
+                    {"type": "text", "text": f"Next Instruction: {prev_instr}"}
+                ],
             },
         )
         messages.append(
@@ -93,12 +95,25 @@ def parse_instruction(
             },
         )
 
+    # Append completed instructions in summary
+    all_prev_instructions = ", ".join(previous_instructions)
+    messages.append(
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"At this point, the user has completed these instructions: {all_prev_instructions}",
+                }
+            ],
+        },
+    )
     # Append current instruction with image
     messages.append(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": f"Instruction: {instruction}"},
+                {"type": "text", "text": f"Next Instruction: {instruction}"},
                 {
                     "type": "image_url",
                     "image_url": {

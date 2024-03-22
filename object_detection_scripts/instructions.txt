@@ -1,2 +1,4 @@
-Turn on coffee machine
-Open coffee machine top cap
+Turn off the coffee machine
+Turn on the fan
+Turn on the humidifier
+Turn off the lights with the bottom button

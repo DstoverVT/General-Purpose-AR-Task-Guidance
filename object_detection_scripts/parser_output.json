@@ -1,7 +1,7 @@
 {
     "0": {
         "objects": [
-            "front red switch"
+            "bottom right red switch"
         ],
         "actions": [
             "press"
@@ -9,7 +9,23 @@
     },
     "1": {
         "objects": [
-            "top right white cap"
+            "bottom right white knob"
+        ],
+        "actions": [
+            "twist"
+        ]
+    },
+    "3": {
+        "objects": [
+            "bottom light switch"
+        ],
+        "actions": [
+            "press"
+        ]
+    },
+    "2": {
+        "objects": [
+            "bottom front white knob"
         ],
         "actions": [
             "twist"

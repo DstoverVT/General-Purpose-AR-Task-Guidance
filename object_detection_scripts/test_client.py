@@ -14,7 +14,7 @@ def send_test_image():
     response = requests.get(GET_INSTRUCTION_URL)
     print(response.text)
     instructions = response.json()
-    num_instructions = len(instructions["instructionsList"])
+    num_instructions = len(instructions)
 
     # Test file path
     filepath = os.path.join("data", "HL_door.jpg")
@@ -97,7 +97,53 @@ def send_test():
     print(f"{time.time() - begin} seconds")
 
 
+def update_output_test():
+    # prereq: Run test (send_test_image) on same set of instructions
+    DETECTOR_URL = "http://172.21.134.52:5000/upload_image"
+    INSTRUCTION_URL = "http://172.21.134.52:5000/parse_instruction"
+    UPDATE_INSTRUCTION_URL = "http://172.21.134.52:5000/update_instructions"
+    # DETECTOR_URL = "http://127.0.0.1:5000/upload_image"
+    # INSTRUCTION_URL = "http://127.0.0.1:5000/parse_instruction"
+
+    response = requests.get(UPDATE_INSTRUCTION_URL)
+    print(response.text)
+    instructions = response.json()
+    num_instructions = len(instructions)
+
+    # Test file path
+    filepath = os.path.join("data", "HL_door.jpg")
+
+    # Test instruction parsing (operator mode)
+    for num in range(num_instructions):
+        img_file = open(
+            filepath,
+            "rb",
+        )
+        file = {"image": img_file}
+        instruction_num = str(num)
+
+        response1 = requests.post(
+            INSTRUCTION_URL, data={"instructionNum": instruction_num}, files=file
+        )
+
+    # Test object detection (user mode)
+
+    for num in range(num_instructions):
+        img_file = open(
+            filepath,
+            "rb",
+        )
+        file = {"image": img_file}
+        instruction_num = str(num)
+
+        response2 = requests.post(
+            DETECTOR_URL, data={"instructionNum": instruction_num}, files=file
+        )
+        print(response2.text)
+
+
 if __name__ == "__main__":
     # gpt_only_test()
-    send_test_image()
+    # send_test_image()
+    update_output_test()
     # send_test()

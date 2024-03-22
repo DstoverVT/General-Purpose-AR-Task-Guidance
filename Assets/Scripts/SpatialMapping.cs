@@ -106,6 +106,8 @@ public class SpatialMapping : MonoBehaviour
             }
         }
 
+        /* Only one visual per instruction, so can clear beforehand. */
+        app.visualsMap[instructionNum].Clear();
         app.visualsMap[instructionNum].AddRange(actionVisuals);
     }
 

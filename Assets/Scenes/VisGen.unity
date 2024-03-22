@@ -2326,7 +2326,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1227984219132118273, guid: 9039aae1f4c02da49a5d92f4a1c91fd4, type: 3}
       propertyPath: m_Text
-      value: 10.10.10.5:5001
+      value: 172.29.32.66:5001
       objectReference: {fileID: 0}
     - target: {fileID: 1765799051758416192, guid: 9039aae1f4c02da49a5d92f4a1c91fd4, type: 3}
       propertyPath: m_Size.x
@@ -2895,6 +2895,8 @@ MonoBehaviour:
   instructionController: {fileID: 0}
   objectDetector: {fileID: 0}
   visualController: {fileID: 0}
+  updatedInstructions: 
+  updateMode: 0
 --- !u!4 &1466554672
 Transform:
   m_ObjectHideFlags: 0
@@ -2924,6 +2926,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   instructionsEndpoint: get_instructions
   newInstructionsEndpoint: new_instructions
+  updateInstructionsEndpoint: update_instructions
   parserEndpoint: parse_instruction
   fileStoragePath: 
   currentInstruction: 0
@@ -4358,6 +4361,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1039194784395075092, guid: be0f828e9c08ee6499ddc41b59e68af5, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 5063447139148057122, guid: be0f828e9c08ee6499ddc41b59e68af5, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0

@@ -26,6 +26,8 @@ public class InstructionController : MonoBehaviour
     [SerializeField]
     private string newInstructionsEndpoint = "new_instructions";
     [SerializeField]
+    private string updateInstructionsEndpoint = "update_instructions";
+    [SerializeField]
     private string parserEndpoint = "parse_instruction";
     /** This file is stored on Hololens to contain the filenames of the pictures taken by the operator for the last
      * instruction set. They are stored on each line in a text file, and overwritten when new instruction pictures are taken. */
@@ -57,9 +59,9 @@ public class InstructionController : MonoBehaviour
     }
 
 
-    public void StartGetInstructions(bool operator_changed)
+    public void StartGetInstructions(bool operator_changed, bool update)
     {
-        StartCoroutine(GetInstructions(operator_changed));
+        StartCoroutine(GetInstructions(operator_changed, update));
     }
 
 
@@ -70,17 +72,25 @@ public class InstructionController : MonoBehaviour
         if (Application.isEditor)
         {
             string testPath = Path.Combine(Application.dataPath, "Materials", "humidifier.jpg");
-            AddImagePath(currentInstruction, testPath);
+            AddImagePath(currentInstruction, testPath, appController.updateMode);
         }
-        StartCoroutine(appController.UpdatePictureText(true)); 
+        StartCoroutine(appController.UpdateCenterText(true, "Taking a picture, hold your head still."));
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
     }
 
 
-    IEnumerator GetInstructions(bool operator_changed)
+    IEnumerator GetInstructions(bool operator_changed, bool update)
     {
         string serverURL = appController.objectDetector.GetServerURL();
-        string endpoint = operator_changed ? newInstructionsEndpoint : instructionsEndpoint;
+        string endpoint;
+        if (update)
+        {
+            endpoint = updateInstructionsEndpoint;
+        }
+        else
+        {
+            endpoint = operator_changed ? newInstructionsEndpoint : instructionsEndpoint;
+        }
         string requestURL = $"http://{serverURL}/{endpoint}";
 
         using (UnityWebRequest request = UnityWebRequest.Get(requestURL))
@@ -188,14 +198,14 @@ public class InstructionController : MonoBehaviour
     {
         if (result.success)
         {
-            StartCoroutine(appController.UpdatePictureText(false));
+            StartCoroutine(appController.UpdateCenterText(false, "Done"));
             /* Save photo to disk */
             Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
             frame.UploadImageDataToTexture(imageTexture);
             byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
             Destroy(imageTexture);
             File.WriteAllBytes(imagePath, imageBytes);
-            AddImagePath(currentInstruction, imagePath); 
+            AddImagePath(currentInstruction, imagePath, appController.updateMode); 
             StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
         }
         else
@@ -207,8 +217,8 @@ public class InstructionController : MonoBehaviour
     }
 
 
-    /** Add image path to corrent instruction List. */
-    void AddImagePath(int instructionNum, string filePath)
+    /** Add image path to correct instruction List. */
+    void AddImagePath(int instructionNum, string filePath, bool update)
     {
         /* Create initial List if instruction index does not exist yet. */
         if (instructionNum >= instructionImagePaths.Count)
@@ -220,6 +230,12 @@ public class InstructionController : MonoBehaviour
             }
         }
 
+        /* On first time updating, clear old instruction paths. */
+        if(update && !appController.updatedInstructions.Contains(instructionNum))
+        {
+            instructionImagePaths[instructionNum].Clear();
+            appController.updatedInstructions.Add(instructionNum);
+        }
         instructionImagePaths[instructionNum].Add(filePath);
     }
 
@@ -282,10 +298,10 @@ public class InstructionController : MonoBehaviour
     {
         if (result.success)
         {
-            StartCoroutine(appController.UpdatePictureText(false));
+            StartCoroutine(appController.UpdateCenterText(false, "Done"));
             Debug.Log("Saved Picture To Disk, can move head now");
             Debug.Log("Sending picture to GPT...");
-            AddImagePath(currentInstruction, imagePath); 
+            AddImagePath(currentInstruction, imagePath, appController.updateMode); 
             StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
         }
         else
