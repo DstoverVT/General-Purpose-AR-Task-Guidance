@@ -74,7 +74,7 @@ class ObjectDetection:
 
         return boxes, boxes_scaled, logits, phrases
 
-    def save_detection_to_plot(self, image):
+    def save_detection_to_plot(self, image, filename):
         """Save image to file system (current directory) with unique name."""
         annotated_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         plt.figure(figsize=(16, 16))
@@ -83,13 +83,14 @@ class ObjectDetection:
         # Make file name
         now = datetime.now()
         timestamp = now.strftime("%m-%d_%H-%M-%S")
-        detection_filename = "detection_result_" + timestamp + ".png"
+        detection_filename = filename + "_" + timestamp + ".png"
         plt.savefig(detection_filename)
         self.detection_path = detection_filename
 
     def draw_raw_detection(
         self,
         model_output: tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]],
+        draw_filename: str,
     ):
         """Draw bounding boxes on input image and save plot."""
         boxes, boxes_scaled, logits, phrases = model_output
@@ -107,7 +108,7 @@ class ObjectDetection:
                 annotated_frame, (int(box[0]), int(box[1])), 10, (255, 0, 0), -1
             )
 
-        self.save_detection_to_plot(annotated_frame)
+        self.save_detection_to_plot(annotated_frame, draw_filename)
 
     def _get_image(self, image_path: str) -> tuple[np.ndarray, torch.Tensor]:
         """Load image for object detection.
@@ -127,6 +128,7 @@ class ObjectDetection:
         prompt: str,
         threshold: float,
         draw: bool = False,
+        draw_filename: str = "",
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
         """Detect objects on image using prompt and threshold for model.
 
@@ -136,7 +138,7 @@ class ObjectDetection:
         self.images = self._get_image(image_path)
         model_output = self._model_inference(self.images, prompt, threshold)
         if draw:
-            self.draw_raw_detection(model_output)
+            self.draw_raw_detection(model_output, draw_filename)
 
         return model_output
 
@@ -302,7 +304,7 @@ class ObjectDetectionInterface:
         )
 
         # Save output image with boxes and centers
-        self.detector.save_detection_to_plot(annotated_frame)
+        self.detector.save_detection_to_plot(annotated_frame, "final_output")
 
     def run_object_detection(
         self,
@@ -310,6 +312,7 @@ class ObjectDetectionInterface:
         text_prompt: str,
         box_threshold: float,
         draw_raw: bool = False,
+        draw_filename: str = "",
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
         """Run GroundingDINO on file path specified.
         Args:
@@ -322,10 +325,10 @@ class ObjectDetectionInterface:
         self.detector.setup_new_detection()
         result = self.detector(
             filepath,
-            # prompt="helmet . computer . bottle . table . mouse . keyboard . controller . knob . button . microwave",
             text_prompt,
             box_threshold,
             draw_raw,
+            draw_filename,
         )
 
         return result
@@ -356,7 +359,11 @@ class ObjectDetectionInterface:
         """
         # First pass saves raw detection output to plot
         _, boxes_pass1, _, _ = self.run_object_detection(
-            filepath, text_prompt, first_threshold, draw_raw=True
+            filepath,
+            text_prompt,
+            first_threshold,
+            draw_raw=True,
+            draw_filename="pre_cropped",
         )
 
         if boxes_pass1.numel() == 0:
@@ -367,7 +374,11 @@ class ObjectDetectionInterface:
         region = self.region_containing_all_boxes(boxes_pass1)
         cropped_image_path = self.crop_image_to_box(region, filepath)
         detection_output = self.run_object_detection(
-            cropped_image_path, text_prompt, second_threshold, draw_raw=True
+            cropped_image_path,
+            text_prompt,
+            second_threshold,
+            draw_raw=True,
+            draw_filename="cropped",
         )
 
         _, boxes, confidences, phrases = detection_output

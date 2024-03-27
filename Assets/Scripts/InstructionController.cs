@@ -15,11 +15,11 @@ public class InstructionController : MonoBehaviour
     private PhotoCapture photoCaptureObject;
     private string imagePath;
     private Resolution imageResolution;
-    /** Data structure that holds path to images for each instruction as such:
-     * [["path1.jpg", "path2.jpg"], ["path3.jpg], ...]
-     * This is stored in a Hololens text file as JSON. 
-     * Each entry in the outer array corresponds to a different instruction. */
-    public List<List<string>> instructionImagePaths;
+    /** This file is stored on Hololens to contain the filenames of the pictures taken by the operator for the last
+     * instruction set. They are stored on each line in a text file, and overwritten when new instruction pictures are taken. */
+    private string fileStoragePath;
+    [SerializeField]
+    private string fileStorageName = "instruction_pictures.json";
 
     [SerializeField]
     private string instructionsEndpoint = "get_instructions";
@@ -29,18 +29,27 @@ public class InstructionController : MonoBehaviour
     private string updateInstructionsEndpoint = "update_instructions";
     [SerializeField]
     private string parserEndpoint = "parse_instruction";
-    /** This file is stored on Hololens to contain the filenames of the pictures taken by the operator for the last
-     * instruction set. They are stored on each line in a text file, and overwritten when new instruction pictures are taken. */
-    [SerializeField]
-    private string fileStoragePath;
 
+    [HideInInspector]
     public List<string> instructions { get; set; }
+    [HideInInspector]
     public int currentInstruction = 0;
+    /* List that holds whether each instruction is processing or not. 
+     * Need to be indexed by instruction number to ensure no concurrent set conditions occur. 
+     * Instruction index is true if it is currently being processed by parser. */
+    [HideInInspector]
+    public List<bool> instructionProcessing = new List<bool>();
+    /** Data structure that holds path to images for each instruction as such:
+     * [["path1.jpg", "path2.jpg"], ["path3.jpg], ...]
+     * This is stored in a Hololens text file as JSON. 
+     * Each entry in the outer array corresponds to a different instruction. */
+    [HideInInspector]
+    public List<List<string>> instructionImagePaths;
 
     // Start is called before the first frame update
     void Start()
     {
-        fileStoragePath = Path.Combine(Application.persistentDataPath, "instruction_pictures.json");
+        fileStoragePath = Path.Combine(Application.persistentDataPath, fileStorageName);
         appController = GameObject.Find("AppController").GetComponent<AppController>(); 
 
         if(!File.Exists(fileStoragePath))
@@ -71,11 +80,25 @@ public class InstructionController : MonoBehaviour
         /* Test */
         if (Application.isEditor)
         {
-            string testPath = Path.Combine(Application.dataPath, "Materials", "humidifier.jpg");
+            string testPath = Path.Combine(Application.dataPath, "Materials", "scan_1280_720.jpg");
             AddImagePath(currentInstruction, testPath, appController.updateMode);
         }
         StartCoroutine(appController.UpdateCenterText(true, "Taking a picture, hold your head still."));
+        if (!Application.isEditor)
+        {
+            instructionProcessing[currentInstruction] = true;
+        }
         PhotoCapture.CreateAsync(false, OnPhotoCaptureCreated);
+    }
+
+
+    private void InitializeProcessingList()
+    {
+        for(int i = 0; i < instructions.Count; i++)
+        {
+            /* Initialize all instructions to not be processing currently. */
+            instructionProcessing.Add(false);
+        }
     }
 
 
@@ -107,6 +130,7 @@ public class InstructionController : MonoBehaviour
             {
                 instructions = JsonConvert.DeserializeObject<List<string>>(request.downloadHandler.text);
                 Debug.Log("Instructions: " + instructions);
+                InitializeProcessingList();
                 /* Once instructions are received, set flag. */
                 if (operator_changed)
                 {
@@ -149,10 +173,13 @@ public class InstructionController : MonoBehaviour
                 Debug.Log("Error in POST request. Response:");
                 Debug.Log(request.downloadHandler.text);
                 Debug.Log("Error: " + request.error);
+                instructionProcessing[currInstruction] = false;
             }
             else
             {
                 Debug.Log("Done: Picture and instruction have been parsed by GPT.");
+                /* Notify that instruction is done processing. */
+                instructionProcessing[currInstruction] = false;
             }
                 
         } 
@@ -165,8 +192,12 @@ public class InstructionController : MonoBehaviour
     {
         photoCaptureObject = captureObject;
 
-        Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
+        //Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
+        Resolution photoResolution = new Resolution();
+        photoResolution.width = 1280;
+        photoResolution.height = 720;
         imageResolution = photoResolution;
+
         CameraParameters c = new CameraParameters();
         c.hologramOpacity = 0.0f;
         c.cameraResolutionWidth = photoResolution.width;

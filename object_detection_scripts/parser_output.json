@@ -1,7 +1,7 @@
 {
     "0": {
         "objects": [
-            "bottom right red switch"
+            "top white light switch button"
         ],
         "actions": [
             "press"
@@ -9,15 +9,7 @@
     },
     "1": {
         "objects": [
-            "bottom right white knob"
-        ],
-        "actions": [
-            "twist"
-        ]
-    },
-    "3": {
-        "objects": [
-            "bottom light switch"
+            "bottom blue thermostat button"
         ],
         "actions": [
             "press"
@@ -25,10 +17,90 @@
     },
     "2": {
         "objects": [
-            "bottom front white knob"
+            "center fan speed knob"
         ],
         "actions": [
             "twist"
+        ]
+    },
+    "3": {
+        "objects": [
+            "right humidifier top",
+            "humidifier top"
+        ],
+        "actions": [
+            "place the picked up object at this location",
+            "pick up"
+        ]
+    },
+    "4": {
+        "objects": [
+            "front humidifier dial"
+        ],
+        "actions": [
+            "twist"
+        ]
+    },
+    "5": {
+        "objects": [
+            "white coffeemaker top",
+            "white coffeemaker base"
+        ],
+        "actions": [
+            "pick up",
+            "place the picked up object at this location"
+        ]
+    },
+    "6": {
+        "objects": [
+            "white coffeemaker top handle"
+        ],
+        "actions": [
+            "twist"
+        ]
+    },
+    "7": {
+        "objects": [
+            "clear glass cup",
+            "left clear glass cup"
+        ],
+        "actions": [
+            "pick up",
+            "place the picked up object at this location"
+        ]
+    },
+    "8": {
+        "objects": [
+            "red coffeemaker switch"
+        ],
+        "actions": [
+            "press"
+        ]
+    },
+    "9": {
+        "objects": [
+            "top alarm clock button"
+        ],
+        "actions": [
+            "press"
+        ]
+    },
+    "10": {
+        "objects": [
+            "middle cabinet handle"
+        ],
+        "actions": [
+            "pull"
+        ]
+    },
+    "11": {
+        "objects": [
+            "tabletop papers",
+            "picked up papers"
+        ],
+        "actions": [
+            "pick up",
+            "place the picked up object at this location"
         ]
     }
 }

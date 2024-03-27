@@ -1,7 +1,7 @@
 import json
 import os
 
-from instruction_parser import parse_instruction, possible_actions
+from instruction_parser import parse_instruction, possible_actions, pickup_actions
 from object_detection import DetectionException, ObjectDetectionInterface
 
 
@@ -16,16 +16,18 @@ def delete_images(*image_paths):
             os.remove(image)
 
 
-def get_objects_from_json(json_data: dict[str, list[str]]) -> tuple[str, str]:
+def get_objects_from_json(
+    json_data: dict[str, list[str]], picture_num: int
+) -> tuple[str, str]:
     """Return objects as promptable string for GroundingDINO from JSON file.
     JSON input or file should be structured as a dict[str, list[str]] with fields "objects" and "actions" mapped to lists.
 
     For example, if object list is "objects": ["one", "two", "three"], outputs "one . two . three"
     """
     object_list = json_data["objects"]
-    object_prompt = " . ".join(object_list)
+    object_prompt = object_list[picture_num]
     action_list = json_data["actions"]
-    first_action = action_list[0]
+    first_action = action_list[picture_num]
 
     return object_prompt, first_action
 
@@ -36,6 +38,7 @@ def detect_objects_in_image(
     thres1: float,
     thres2: float,
     instruction_num: int,
+    picture_num: int,
 ) -> tuple[tuple[float, float], str]:
     """Run object detection on image.
 
@@ -51,7 +54,7 @@ def detect_objects_in_image(
     instruction_json = json_data[num]
 
     print(f"Running object detection on instruction {num}...")
-    object_prompt, action = get_objects_from_json(instruction_json)
+    object_prompt, action = get_objects_from_json(instruction_json, picture_num)
     center, top_left_coord, cropped_image = detector.run_object_detection_with_crop(
         image_path,
         object_prompt,
@@ -99,13 +102,30 @@ def get_cropped_image(
     Returns:
     - Filename of new saved cropped image
     """
-    object_prompt, _ = get_objects_from_json(json_input)
+    object_prompt, _ = get_objects_from_json(json_input, 0)
     _, boxes, _, _ = detector.run_object_detection(filepath, object_prompt, threshold)
+
+    # Signal to not run on cropped image if only 1 box is found.
+    if boxes.shape[0] == 1:
+        return ""
 
     # Run object detection again after cropping image to largest box
     region = detector.region_containing_all_boxes(boxes)
     cropped_image_path = detector.crop_image_to_box(region, filepath)
     return cropped_image_path
+
+
+def verify_pickup_and_place(new_action: str, previous_action: str) -> str:
+    """Ensures that an instruction using pickup and place outputs both."""
+    # Ensure that previous and new actions aren't the same (both pick up or both place)
+    verified_action = new_action
+    if new_action == previous_action:
+        for action in pickup_actions:
+            # Force action to be the other action that was not selected (pickup or place)
+            if verified_action != action:
+                verified_action = action
+                break
+    return verified_action
 
 
 def add_json_to_output_file(
@@ -150,9 +170,19 @@ def add_json_to_output_file(
                 if action not in possible_actions:
                     print("**Re-running GPT, it output an invalid action")
                     return False
-                curr_instruction["actions"].append(action)
+                # Ensures that both pickup and place are output
+                # Using [0] as index for action only works since current system only allows 2 object/actions max
+                # Will have to change 0 to find what the previous action index is if system allows for >2 objects.
+                verified_action = verify_pickup_and_place(
+                    action, curr_instruction["actions"][0]
+                )
+                curr_instruction["actions"].append(verified_action)
     else:
         # New instruction, add output to json
+        for action in json_data["actions"]:
+            if action not in possible_actions:
+                print("**Re-running GPT, it output an invalid action")
+                return False
         current_json[num] = json_data
 
     with open(OUTPUT_FILE, "w") as file:
@@ -161,7 +191,9 @@ def add_json_to_output_file(
     return True
 
 
-def get_previous_gpt_outputs(instructions: list[str], instruction_num: int):
+def get_previous_gpt_outputs(
+    instructions: list[str], instruction_num: int, update: bool
+):
     """Returns previous responses from parser output JSON file."""
     with open(OUTPUT_FILE, "r") as file:
         # Make sure file isn't empty
@@ -180,6 +212,14 @@ def get_previous_gpt_outputs(instructions: list[str], instruction_num: int):
             previous_instructions.append(instructions[int(num)])
             # Store string version of each instruction response
             previous_outputs.append(json.dumps(output))
+
+        if not update or instruction_num in updated_instructions:
+            # Only include current instruction if not in update mode or current instruction
+            # has already been updated
+            if int(num) == instruction_num:
+                previous_instructions.append(instructions[int(num)])
+                # Store string version of each instruction response
+                previous_outputs.append(json.dumps(output))
 
     return previous_instructions, previous_outputs
 
@@ -206,7 +246,7 @@ def instruction_gpt_calls(
     print(f"Parsing instruction: {instruction}...")
     # Get previous info to give to GPT for conversation history
     previous_instructions, previous_responses = get_previous_gpt_outputs(
-        instructions, instruction_num
+        instructions, instruction_num, update
     )
 
     json_output: dict[str, list[str]] = parse_instruction(
@@ -216,21 +256,48 @@ def instruction_gpt_calls(
     print(json.dumps(json_output, indent=4))
 
     valid_actions = False
+    no_crop = False
+    second_image = image_file
+    attempts = 0
     # Call GPT until the action it outputs is valid (in possible_actions)
     while not valid_actions:
-        cropped_image = get_cropped_image(detector, threshold, image_file, json_output)
+        if attempts >= 3:
+            print("GPT did not find a correct action in 3 attempts, moving on.")
+            break
+        if not no_crop:
+            cropped_image = get_cropped_image(
+                detector, threshold, image_file, json_output
+            )
+            second_image = cropped_image
+            # Don't run on cropped image if only 1 box is found, not necessary
+            if cropped_image == "":
+                no_crop = True
+                second_image = image_file
+
+        if no_crop:
+            print("Checking first GPT output since no crop needed.")
+            valid_actions = add_json_to_output_file(
+                json_output, instruction_num, update
+            )
+            # Don't run parser again if first output was valid and no need to crop
+            if valid_actions:
+                break
+            else:
+                print("Parsing original image again to get valid actions.")
+
         # Give second pass higher detail to be sure outputs are correct
         parsed_output = parse_instruction(
             instruction,
-            cropped_image,
+            second_image,
             previous_instructions,
             previous_responses,
-            high_detail=False,
+            high_detail=True,
         )
         print("-------- GPT OUTPUT 2: ----------")
         print(json.dumps(parsed_output, indent=4))
 
         # Add output to parser output JSON file
         valid_actions = add_json_to_output_file(parsed_output, instruction_num, update)
+        attempts += 1
 
     # delete_images(cropped_image)

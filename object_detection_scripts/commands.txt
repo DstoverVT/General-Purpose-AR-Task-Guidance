@@ -1,7 +1,0 @@
-operator picture: take a picture
-operator next: next instruction
-operator done: Move to user phase
-
-scan picture
-scan next
-scan done

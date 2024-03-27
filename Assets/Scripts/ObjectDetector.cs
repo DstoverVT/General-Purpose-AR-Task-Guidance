@@ -84,6 +84,10 @@ public class ObjectDetector : MonoBehaviour
         {
             return VisualController.Hand.Pickup;
         }
+        else if(action == "place the picked up object at this location")
+        {
+            return VisualController.Hand.PutDown;
+        }
         else if(action == "pull")
         {
             return VisualController.Hand.Pull;
@@ -107,7 +111,7 @@ public class ObjectDetector : MonoBehaviour
             else
             {
                 //spatialMapper.TestPlaceHandFromMesh(objectLocation, visual, true);
-                spatialMapper.StoreMapFromMesh(instructionNum, objectLocation, visual);
+                spatialMapper.StoreMapFromMesh(instructionNum, objectLocation, visual, false);
                 spatialMapper.ClearState();
             }
         }
@@ -145,7 +149,16 @@ public class ObjectDetector : MonoBehaviour
     {
         photoCaptureObject = captureObject;
 
-        Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
+        //Debug.Log("Resolutions:");
+        //foreach(Resolution res in PhotoCapture.SupportedResolutions)
+        //{
+        //    Debug.Log($"{res.width} x {res.height}");
+        //}
+        //Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
+        Resolution photoResolution = new Resolution();
+        /* Resolution choices in: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/locatable-camera-overview */
+        photoResolution.width = 1280;
+        photoResolution.height = 720; 
         imageResolution = photoResolution;
         //Debug.Log("Image Width: " + photoResolution.width);
         //Debug.Log("Image Height: " + photoResolution.height);
@@ -184,14 +197,14 @@ public class ObjectDetector : MonoBehaviour
             StartCoroutine(appController.UpdateCenterText(false, "Done"));
             Debug.Log($"Photo capture time: {Time.realtimeSinceStartup - startPhotoTime} s");
             /* Saving frame to be able to extract camera details for spatial mapper. */
-            spatialMapper.StoreState(frame);
+        spatialMapper.StoreState(frame);
             Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
             frame.UploadImageDataToTexture(imageTexture);
             byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
             Destroy(imageTexture);
             /* Save photo to disk */
             File.WriteAllBytes(imagePath, imageBytes);
-            StartCoroutine(UploadImage(imagePath, appController.instructionController.currentInstruction));
+            StartCoroutine(UploadImage(imagePath, appController.instructionController.currentInstruction, appController.instructionPictureNum));
         }
         else
         {
@@ -217,7 +230,7 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    IEnumerator UploadImage(string imagePath, int currInstruction)
+    IEnumerator UploadImage(string imagePath, int currInstruction, int currPicture)
     {
         startRequestTime = Time.realtimeSinceStartup;
         ////Debug.Log("Upload image Coroutine.");
@@ -237,6 +250,7 @@ public class ObjectDetector : MonoBehaviour
             throw new ArgumentOutOfRangeException("Current instruction (" + currInstruction + ") should not be greater than number of instructions");
         }
         form.AddField("instructionNum", currInstruction);
+        form.AddField("pictureNum", currPicture);
 
         using(UnityWebRequest request = UnityWebRequest.Post(requestURL, form))
         {

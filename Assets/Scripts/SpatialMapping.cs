@@ -94,7 +94,7 @@ public class SpatialMapping : MonoBehaviour
     }
 
 
-    private void AddToVisualsMap(int instructionNum, GameObject[] actionVisuals)
+    public void AddToVisualsMap(int instructionNum, GameObject[] actionVisuals)
     {
         /* Create initial List if instruction index does not exist yet. */
         if (instructionNum >= app.visualsMap.Count)
@@ -113,7 +113,7 @@ public class SpatialMapping : MonoBehaviour
 
 
     /** Adapted from PlaceHandFromMesh to store result in visualsMap. */
-    public void StoreMapFromMesh(int instructionNum, Vector2 object2DLocation, VisualController.Hand handType)
+    public void StoreMapFromMesh(int instructionNum, Vector2 object2DLocation, VisualController.Hand handType, bool test)
     {
         /* Attempt to raycast see where it hits the spatial mesh . */
         RaycastHit raycastHit;
@@ -122,7 +122,14 @@ public class SpatialMapping : MonoBehaviour
 
         Ray ray;
         /* Need to use custom camera with settings from the Hololens PV camera. */
-        ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
+        if (test)
+        {
+            ray = mainCamera.ScreenPointToRay(object2DLocation);
+        }
+        else
+        {
+            ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
+        }
         //ray = mainCamera.ScreenPointToRay(object2DLocation);
         /* Draw line to show where ray is cast. */
         rayLine.positionCount = 2;
@@ -135,8 +142,48 @@ public class SpatialMapping : MonoBehaviour
              * Instruction list:
              * [[GameObject 1, GameObject 2], [..], ...]
              */
-            GameObject[] visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType, false);
-            AddToVisualsMap(instructionNum, visuals);
+            /* Handle pickup visual, requires 2 coordinates before storing in map. */
+            GameObject[] visuals;
+            if (handType == VisualController.Hand.Pickup || handType == VisualController.Hand.PutDown)
+            {
+                /* Add Pickup coordinates to index 0 and PutDown coordinates to index 1. */
+                int coordIndex = (handType == VisualController.Hand.Pickup) ? 0 : 1;
+                app.visualController.pickupCoords[coordIndex] = raycastHit.point;
+                app.visualController.pickupNormals[coordIndex] = raycastHit.normal;
+
+                /* Once there's both a Pickup and PutDown visual stored. */
+                if (app.visualController.pickupCoords[0] != null &&
+                    app.visualController.pickupCoords[1] != null)
+                {
+                    visuals = app.visualController.PlaceHandPickupVisuals();
+                    if (test)
+                    {
+                        foreach (GameObject visual in visuals)
+                        {
+                            visual.SetActive(true);
+                        }
+                    }
+                    else
+                    {
+                        AddToVisualsMap(instructionNum, visuals);
+                    }
+                }
+            }
+            else
+            {
+                visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType, test);
+                if (test)
+                {
+                    foreach (GameObject visual in visuals)
+                    {
+                        visual.SetActive(true);
+                    }
+                }
+                else
+                {
+                    AddToVisualsMap(instructionNum, visuals);
+                }
+            }
         }
         else
         {
@@ -147,55 +194,55 @@ public class SpatialMapping : MonoBehaviour
     }
 
 
-    public void TestPlaceHandFromMesh(Vector2 object2DLocation, VisualController.Hand handType, bool useStoredState)
-    {
-        /* Attempt to raycast see where it hits the spatial mesh . */
-        RaycastHit raycastHit;
+    //public void TestPlaceHandFromMesh(Vector2 object2DLocation, VisualController.Hand handType, bool useStoredState)
+    //{
+    //    /* Attempt to raycast see where it hits the spatial mesh . */
+    //    RaycastHit raycastHit;
 
-        int layerMask = 1 << spatialMeshLayer;
+    //    int layerMask = 1 << spatialMeshLayer;
 
-        Ray ray;
-        /* Need to use custom camera with settings from the Hololens PV camera. */
-        if (useStoredState && lastSavedCamera != null)
-        {
-            Debug.Log("Using last saved camera");
-            ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
-        }
-        else
-        {
-            ray = mainCamera.ScreenPointToRay(object2DLocation);
-        }
-        rayLine.positionCount = 2;
-        rayLine.SetPositions(new Vector3[] { ray.origin, ray.origin + ray.direction * 5 });
-        /* Draw line to show where ray is cast. */
-        /* 3D raycast */ 
-        if (Physics.Raycast(ray, out raycastHit, Mathf.Infinity, layerMask))
-        {
-            bool test = !useStoredState;
-            GameObject[] visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType, test);
-            /* Place hand visuals right away */
-            if (visuals[0] != null)
-            {
-                foreach (GameObject visual in visuals)
-                {
-                    visual.SetActive(true);
-                }
-            }
-        }
-        else
-        {
-            /* Place hand right in front of user by default */
-            app.visualController.TestPlaceHand(handType);
-            Debug.Log("No depth was found.");
-        }
-    }
+    //    Ray ray;
+    //    /* Need to use custom camera with settings from the Hololens PV camera. */
+    //    if (useStoredState && lastSavedCamera != null)
+    //    {
+    //        Debug.Log("Using last saved camera");
+    //        ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
+    //    }
+    //    else
+    //    {
+    //        ray = mainCamera.ScreenPointToRay(object2DLocation);
+    //    }
+    //    rayLine.positionCount = 2;
+    //    rayLine.SetPositions(new Vector3[] { ray.origin, ray.origin + ray.direction * 5 });
+    //    /* Draw line to show where ray is cast. */
+    //    /* 3D raycast */ 
+    //    if (Physics.Raycast(ray, out raycastHit, Mathf.Infinity, layerMask))
+    //    {
+    //        bool test = !useStoredState;
+    //        GameObject[] visuals = app.visualController.PlaceHandVisual(raycastHit.point, raycastHit.normal, handType);
+    //        /* Place hand visuals right away */
+    //        if (visuals[0] != null)
+    //        {
+    //            foreach (GameObject visual in visuals)
+    //            {
+    //                visual.SetActive(true);
+    //            }
+    //        }
+    //    }
+    //    else
+    //    {
+    //        /* Place hand right in front of user by default */
+    //        app.visualController.TestPlaceHand(handType);
+    //        Debug.Log("No depth was found.");
+    //    }
+    //}
 
 
     public void testRaycast()
     {
         Vector2 object2DLocation = new Vector2(mainCamera.pixelWidth / 2, mainCamera.pixelHeight / 2);
-        TestPlaceHandFromMesh(object2DLocation, testHandType, false);
-        //StoreMapFromMesh(app.instructionController.currentInstruction, object2DLocation, testHandType);
+        //TestPlaceHandFromMesh(object2DLocation, testHandType, false);
+        StoreMapFromMesh(app.instructionController.currentInstruction, object2DLocation, testHandType, true);
 
         /* Change mesh to use wireframe while debugging. */
         foreach(MeshFilter mesh in meshManager.meshes)

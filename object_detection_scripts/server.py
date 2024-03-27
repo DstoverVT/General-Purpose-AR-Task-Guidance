@@ -86,12 +86,14 @@ def upload_image():
     """
     filepath = save_image_from_request()
     instruction_num: int = int(request.form["instructionNum"])
+    picture_num: int = int(request.form["pictureNum"])
     found_center, action = detect_objects_in_image(
         detector,
         filepath,
         app.config["CROP_THRESHOLD"],
         app.config["OBJECT_THRESHOLD"],
         instruction_num,
+        picture_num,
     )
 
     delete_images(filepath)

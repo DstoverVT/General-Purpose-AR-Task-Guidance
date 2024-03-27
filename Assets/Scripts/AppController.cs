@@ -1,5 +1,6 @@
 using MixedReality.Toolkit;
 using MixedReality.Toolkit.Subsystems;
+using MixedReality.Toolkit.UX;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -12,7 +13,6 @@ using UnityEngine.UI;
 /** Controls state of the app, as well as what to display to user. */
 public class AppController : MonoBehaviour
 {
-    private int instructionPictureNum = 0;
     private int scanTotalPictureNum = 0;
     //private int totalPicturesToScan = 0;
     //private Queue<Sprite> imageSprites = new Queue<Sprite>();
@@ -20,6 +20,8 @@ public class AppController : MonoBehaviour
      * Probably should have used a dictionary similar to storing instruction outputs in JSON on server.
      * So then I wouldn't have to keep everything in order, could label them with instruction num key. */
     private List<List<Sprite>> instructionSprites = new List<List<Sprite>>();
+    private bool parsedInstructionOnce = false;
+    private DialogPool dialogPool;
 
     [SerializeField]
     private TextMeshProUGUI instructionLabel;
@@ -31,18 +33,27 @@ public class AppController : MonoBehaviour
     private GameObject debugInfo;
     [SerializeField]
     private Image scanImage;
+    [SerializeField]
+    private GameObject debugRaycastButton;
     /** Data structure that holds path to images for each instruction as such:
      * [["path1.jpg", "path2.jpg"], ["path3.jpg], ...]
      * This is stored in a Hololens text file as JSON. 
      * Each entry in the outer array corresponds to a different instruction. */
     //private List<List<string>> imagePaths;
 
+    [HideInInspector]
+    public int instructionPictureNum = 0;
     public AppState appState { get; set; }
+    [HideInInspector]
     public UnityEvent onInstructionsReceived;
+    [HideInInspector]
     public UnityEvent onNewInstructionsReceived;
     /* Main components for app. */
+    [HideInInspector]
     public InstructionController instructionController;
+    [HideInInspector]
     public ObjectDetector objectDetector;
+    [HideInInspector]
     public VisualController visualController;
     /** Data structure to hold where to place visuals, example:
      * [
@@ -51,9 +62,11 @@ public class AppController : MonoBehaviour
      * ] 
      * Where each outer list entry corresponds to a different instruction
      */
-    public List<List<GameObject>> visualsMap { get; set; }
+    public List<List<GameObject>> visualsMap { get; set; } = new List<List<GameObject>>();
     /* Handle updating instructions. */
+    [HideInInspector]
     public List<int> updatedInstructions = new List<int>();
+    [HideInInspector]
     public bool updateMode = false;
 
     public enum AppState
@@ -72,20 +85,23 @@ public class AppController : MonoBehaviour
         instructionController = GetComponent<InstructionController>();
         objectDetector = GetComponent<ObjectDetector>();
         visualController = GetComponent<VisualController>();
+        dialogPool = GetComponent<DialogPool>();
 
         /* Set up keyword speech recognition. */
         var speechRecognition = XRSubsystemHelpers.GetFirstRunningSubsystem<KeywordRecognitionSubsystem>();
 
         if(speechRecognition != null)
         {
-            speechRecognition.CreateOrGetEventForKeyword("debug open").AddListener(() => debugInfo.SetActive(true));
-            speechRecognition.CreateOrGetEventForKeyword("debug close").AddListener(() => debugInfo.SetActive(false));
+            speechRecognition.CreateOrGetEventForKeyword("debug open").AddListener(() => { debugInfo.SetActive(true); debugRaycastButton.SetActive(true); });
+            speechRecognition.CreateOrGetEventForKeyword("debug close").AddListener(() => { debugInfo.SetActive(false); debugRaycastButton.SetActive(false); });
             /* Operator phase voice commands. */
             speechRecognition.CreateOrGetEventForKeyword("operator image").AddListener(HandleOperator);
             speechRecognition.CreateOrGetEventForKeyword("operator done").AddListener(DoneOperator);
             speechRecognition.CreateOrGetEventForKeyword("operator next").AddListener(OperatorNextInstruction);
+            speechRecognition.CreateOrGetEventForKeyword("operator previous").AddListener(OperatorPreviousInstruction);
             /* Prescan phase voice commands. */
             speechRecognition.CreateOrGetEventForKeyword("scan next").AddListener(ScanNextPicture);
+            speechRecognition.CreateOrGetEventForKeyword("scan previous").AddListener(ScanPreviousPicture);
             speechRecognition.CreateOrGetEventForKeyword("scan image").AddListener(UserPrescan);
             speechRecognition.CreateOrGetEventForKeyword("scan done").AddListener(DonePrescan);
             /* User phase voice commands. */
@@ -95,12 +111,22 @@ public class AppController : MonoBehaviour
 
         onInstructionsReceived.AddListener(HandleReceivedInstructions);
         onNewInstructionsReceived.AddListener(HandleReceivedNewInstructions);
-        visualsMap = new List<List<GameObject>>();
     }
 
     // Update is called once per frame
     void Update()
     {
+        /* Display guiding arrow in USER mode. */
+        if(appState == AppState.USER)
+        {
+            /* Set arrow to follow current task's visual. */
+            GameObject currentTaskVisual = visualsMap[instructionController.currentInstruction][0];
+            visualController.UpdateArrowGuide(currentTaskVisual);
+        }
+        else
+        {
+            visualController.ToggleArrow(false);
+        }
     }
 
 
@@ -134,14 +160,14 @@ public class AppController : MonoBehaviour
         appState = newState;
         string labelText = appState switch
         {
-            AppState.INIT => "Init",
+            AppState.INIT => "",
             AppState.OPERATOR => "Operator",
             AppState.USER_PRESCAN => "Scanning",
             AppState.USER => "User",
             _ => "Invalid"
         };
 
-        stateText.SetText($"{labelText} mode");
+        stateText.SetText(labelText);
     }
 
 
@@ -155,6 +181,7 @@ public class AppController : MonoBehaviour
         else
         {
             centerText.SetText(message);
+            centerText.gameObject.SetActive(true);
             yield return new WaitForSeconds(2);
             /* Disable label after 2 seconds of showing Done */
             centerText.gameObject.SetActive(false);
@@ -162,23 +189,38 @@ public class AppController : MonoBehaviour
     }
 
 
-    /** Called from button click currently. Gets instructions from server. */
     public void StartOperator()
     {
         /* Cannot go into operator mode while in scanning phase. */
         if (appState != AppState.USER_PRESCAN)
         {
-            /* If coming from USER state, need to update instructions instead of replace them. */
-            if(appState == AppState.USER)
-            {
-                /* Signal that instructions will be updated. */
-                HideVisualsMap();
-                updateMode = true;
-                updatedInstructions.Clear();
-                instructionController.StartGetInstructions(true, updateMode);
-                scanImage.sprite = null;
-            }
+            /* From https://learn.microsoft.com/en-us/windows/mixed-reality/mrtk-unity/mrtk3-uxcore/packages/uxcore/dialog-api */
+            dialogPool.Get()
+                .SetHeader("Confirm to Start Operator Mode")
+                .SetBody("By clicking confirm you will enter Operator mode, which may overwrite previous instructions that have been saved.")
+                .SetPositive("Confirm", (args) => ConfirmStartInstructions(args))
+                .SetNegative("Go Back", (args) => {; })
+                .Show();
+        }
+    }
 
+
+    /** Called from dialog box confirmation. Gets instructions from server. */
+            public void ConfirmStartInstructions(DialogButtonEventArgs args)
+    {
+        /* If coming from USER state, need to update instructions instead of replace them. */
+        if (appState == AppState.USER)
+        {
+            /* Signal that instructions will be updated. */
+            HideVisualsMap();
+            updateMode = true;
+            updatedInstructions.Clear();
+            instructionController.StartGetInstructions(true, updateMode);
+            scanImage.sprite = null;
+        }
+        else
+        {
+            /* If not coming from user mode. */
             instructionController.StartGetInstructions(true, updateMode);
             instructionController.currentInstruction = 0;
         }
@@ -188,11 +230,32 @@ public class AppController : MonoBehaviour
     /** Called by voice command "Operator Next" during OPERATOR state. */
     private void OperatorNextInstruction()
     {
-        if (appState == AppState.OPERATOR && 
-            instructionController.currentInstruction < (instructionController.instructions.Count - 1))
+        if (appState == AppState.OPERATOR)
         {
-            instructionController.currentInstruction++;
+            if (instructionController.currentInstruction < (instructionController.instructions.Count - 1))
+            {
+                instructionController.currentInstruction++;
+                DisplayCurrentInstruction();
+                parsedInstructionOnce = false;
+            }
+            /* If gone past last instruction show operator done page. */
+            else if(instructionController.currentInstruction == (instructionController.instructions.Count - 1))
+            {
+                DisplayDoneLabel();
+            }
+        }
+    }
+
+
+    /** Called by voice command "Operator Previous" during OPERATOR state. */
+    private void OperatorPreviousInstruction()
+    {
+        if (appState == AppState.OPERATOR && 
+            instructionController.currentInstruction > 0)
+        {
+            instructionController.currentInstruction--;
             DisplayCurrentInstruction();
+            parsedInstructionOnce = false;
         }
     }
 
@@ -202,7 +265,17 @@ public class AppController : MonoBehaviour
     {
         if(appState == AppState.OPERATOR)
         {
-            instructionController.RunInstructionParser();
+            bool isInstructionProcessing = instructionController.instructionProcessing[instructionController.currentInstruction];
+            /* For instructions that have multiple images, ensure the last one finished processing. */
+            if (parsedInstructionOnce && isInstructionProcessing)
+            {
+                StartCoroutine(UpdateCenterText(false, "Wait for previous image to process."));
+            }
+            else
+            {
+                instructionController.RunInstructionParser();
+            }
+            parsedInstructionOnce = true;
         }
     }
 
@@ -236,6 +309,14 @@ public class AppController : MonoBehaviour
         string instructionText = "Instruction " + (instructionController.currentInstruction + 1) + ": " + currInstruction;
         Debug.Log(instructionText);
         instructionLabel.SetText(instructionText);
+    }
+
+
+    private void DisplayDoneLabel()
+    {
+        string mode = (appState == AppState.OPERATOR) ? "operator" : "scan";
+        string label = $"Done with {mode} phase. Say \"{mode} done\" when ready.";
+        instructionLabel.SetText(label);
     }
 
 
@@ -336,6 +417,12 @@ public class AppController : MonoBehaviour
                     scanTotalPictureNum++;
                     StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
                 }
+                /* Display done when gone through all images. */
+                else
+                {
+                    DisplayDoneLabel();
+                    scanImage.gameObject.SetActive(false);
+                }
             }
             else
             {
@@ -343,12 +430,32 @@ public class AppController : MonoBehaviour
                 scanTotalPictureNum++;
                 StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
             }
+        }
+    }
 
-            //if ((scanTotalPictureNum + 1) < totalPicturesToScan)
-            //{
-            //    scanTotalPictureNum++;
-            //    DisplayCurrentPicture();
-            //}
+
+
+    /** Called by voice command "Scan Previous" during USER_PRESCAN state. */
+    private void ScanPreviousPicture()
+    {
+        if (appState == AppState.USER_PRESCAN)
+        {
+            /* Need to go to last picture of last instruction. */
+            if(instructionPictureNum == 0 && instructionController.currentInstruction > 0)
+            {
+                instructionController.currentInstruction--;
+                List<string> lastImages = instructionController.instructionImagePaths[instructionController.currentInstruction];
+                instructionPictureNum = lastImages.Count - 1;
+                scanTotalPictureNum--;
+                StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
+            }
+            /* Go to last picture of current instruction. */
+            else if(instructionPictureNum > 0)
+            {
+                instructionPictureNum--;
+                scanTotalPictureNum--;
+                StartCoroutine(DisplayPicture(instructionController.currentInstruction, instructionPictureNum));
+            }
         }
     }
 
@@ -510,9 +617,10 @@ public class AppController : MonoBehaviour
     }
 
 
-    private void DisplayTaskGuidance()
+private void DisplayTaskGuidance()
     {
         DisplayCurrentInstruction();
+        visualController.ToggleArrow(true);
         /* Display current instruction visuals. */
         for(int i = 0; i < visualsMap.Count; i++)
         {
@@ -521,6 +629,12 @@ public class AppController : MonoBehaviour
             bool displayVisual = false;
             if(i == instructionController.currentInstruction)
             {
+                /* No visuals found for this instruction. */
+                if(instructionVisuals.Count == 0)
+                {
+                    visualController.ToggleArrow(false);
+                    StartCoroutine(UpdateCenterText(false, "No visual found for this instruction."));
+                }
                 displayVisual = true;
             }
             /* Set current instructions visuals active, and hide all others. */

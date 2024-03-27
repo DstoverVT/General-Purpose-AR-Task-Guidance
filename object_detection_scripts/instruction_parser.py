@@ -6,7 +6,15 @@ from openai import OpenAI
 
 load_dotenv()
 
-possible_actions = ["press", "twist", "pull", "pick up"]  # "put down destination"]
+possible_actions = [
+    "press",
+    "twist",
+    "pull",
+    "pick up",
+    "place the picked up object at this location",
+]
+
+pickup_actions = ["pick up", "place the picked up object at this location"]
 
 
 def encode_image(image_path):
@@ -45,10 +53,10 @@ def parse_instruction(
 
     system_prompt = f"You will be given multiple instructions that a user has to perform. You will be given them one at a time as the user completes them. Your output should be in JSON format. \
                     One JSON field should be called 'objects', which will contain a list of objects (strings) that exist in the provided image that the user should use to complete the current instruction. \
-                    Each object within the 'objects' list should have a corresponding action the user should perform on the object to complete the instruction. \
-                    Another JSON field called 'actions' will contain these actions (strings) in a list where each entry is the action the user should perform on the corresponding object entry in the 'objects' list. \
-                    The possible actions for the user include: {action_string}. \
-                    Make sure the user can complete the instruction with all of the objects and actions while trying to use the lowest amount of objects. \
+                    The object within the 'objects' list should have a corresponding action the user should perform on the object to complete the instruction. \
+                    Another JSON field called 'actions' will contain these actions (strings) in a list where each entry is the action the user should perform on the object in the 'objects' list. \
+                    The possible actions for the user include: {action_string}. Output one of these actions exactly as listed. \
+                    Output only one object and action in each list that would be best to complete the instruction based on the image. Ensure the object you output exists in the current provided image. \
                     In the 'objects' list, each object string should be structured as such: '<object position> <object name>' with the following properties: \
                     <object name> is the specific object the user should use to complete the instruction. If the object is a component within a larger object, output the most specific component needed for the instruction. Be specific while trying to use the lowest amount of words for the object name. \
                     <object position> is the position of the object in the image. Check that the position ensures the object can't be confused with other similar objects, also include the object color if it is unique. Be specific while trying to use the lowest amount of words for the position. \
