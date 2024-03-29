@@ -10,13 +10,15 @@ public class SpatialMapping : MonoBehaviour
 {
     public Camera mainCamera;
     public static int spatialMeshLayer = 3;
+    /* Saves the camera state for each picture taken while processing. When the instruction
+     * is done processing, will set its camera to null. This allows instructions to be processed without
+     * worrying about waiting for the last one to complete. */
+    public List<List<Camera>> savedCameras = new List<List<Camera>>();
 
-    private AppController app;
     private LineRenderer rayLine;
     private bool raycastTest = false;
     private bool cameraTest = false;
-    private Camera lastSavedCamera;
-    private ARMeshManager meshManager;
+    //private Camera lastSavedCamera;
 
     [SerializeField]
     private VisualController.Hand testHandType;
@@ -30,13 +32,16 @@ public class SpatialMapping : MonoBehaviour
     private Material meshWireframe;
     [SerializeField]
     private Material meshTransparent;
+    [SerializeField]
+    private AppController app;
+    [SerializeField]
+    private ARMeshManager meshManager;
+
 
 
     // Start is called before the first frame update
     void Start()
     {
-        app = GameObject.Find("AppController").GetComponent<AppController>();
-        meshManager = GameObject.Find("ARMeshManager").GetComponent<ARMeshManager>();
         rayLine = GetComponent<LineRenderer>();
 
         if(cameraTest)
@@ -113,7 +118,7 @@ public class SpatialMapping : MonoBehaviour
 
 
     /** Adapted from PlaceHandFromMesh to store result in visualsMap. */
-    public void StoreMapFromMesh(int instructionNum, Vector2 object2DLocation, VisualController.Hand handType, bool test)
+    public void StoreMapFromMesh(int instructionNum, int pictureNum, Vector2 object2DLocation, VisualController.Hand handType, bool test)
     {
         /* Attempt to raycast see where it hits the spatial mesh . */
         RaycastHit raycastHit;
@@ -128,7 +133,7 @@ public class SpatialMapping : MonoBehaviour
         }
         else
         {
-            ray = lastSavedCamera.ScreenPointToRay(object2DLocation);
+            ray = savedCameras[instructionNum][pictureNum].ScreenPointToRay(object2DLocation);
         }
         //ray = mainCamera.ScreenPointToRay(object2DLocation);
         /* Draw line to show where ray is cast. */
@@ -242,7 +247,7 @@ public class SpatialMapping : MonoBehaviour
     {
         Vector2 object2DLocation = new Vector2(mainCamera.pixelWidth / 2, mainCamera.pixelHeight / 2);
         //TestPlaceHandFromMesh(object2DLocation, testHandType, false);
-        StoreMapFromMesh(app.instructionController.currentInstruction, object2DLocation, testHandType, true);
+        StoreMapFromMesh(app.instructionController.currentInstruction, app.instructionController.currentPictureNum,  object2DLocation, testHandType, true);
 
         /* Change mesh to use wireframe while debugging. */
         foreach(MeshFilter mesh in meshManager.meshes)
@@ -282,22 +287,45 @@ public class SpatialMapping : MonoBehaviour
     }
 
 
-    private void SetCameraTransform(Matrix4x4 matrix)
+    private void SetCameraTransform(Camera cameraState, Matrix4x4 matrix)
     {
         /* From unity docs:
          * "Note that camera space matches OpenGL convention: camera's forward is the negative Z axis. This is different from Unity's convention, where forward is the positive Z axis." */
         Vector3 camPosition = matrix.MultiplyPoint(Vector3.zero);
         Quaternion camRotation = Quaternion.LookRotation(-matrix.GetColumn(2), matrix.GetColumn(1));
 
-        lastSavedCamera.transform.rotation = camRotation;
-        lastSavedCamera.transform.position = camPosition;
+        cameraState.transform.rotation = camRotation;
+        cameraState.transform.position = camPosition;
     }
 
 
-    public void StoreState(PhotoCaptureFrame capture)
+    /* Similar code to AddImagePath, no time to refactor but should make a generic method to do these both. */
+    private void AddToCameraList(int instructionNum, Camera cameraState)
+    {
+        /* Create initial List if camera index does not exist yet. */
+        if (instructionNum >= savedCameras.Count)
+        {
+            int numToAdd = (instructionNum + 1) - savedCameras.Count;
+            for (int i = 0; i < numToAdd; i++)
+            {
+                savedCameras.Add(new List<Camera>());
+            }
+        }
+
+        /* On first time updating, clear old camera states. */
+        if(app.updateMode && !app.updatedInstructions.Contains(instructionNum))
+        {
+            savedCameras[instructionNum].Clear();
+        }
+        savedCameras[instructionNum].Add(cameraState);
+    }
+
+
+    public void StoreState(int instructionNum, PhotoCaptureFrame capture)
     {
         /* Take snapshot of what main camera sees and its properties. */
         GameObject tempCameraObject = new GameObject("TempCameraObject");
+        Camera lastSavedCamera;
         lastSavedCamera = tempCameraObject.AddComponent<Camera>();
         lastSavedCamera.CopyFrom(mainCamera);
 
@@ -310,7 +338,7 @@ public class SpatialMapping : MonoBehaviour
             /* Set Camera's transform position/rotation from capture */
             Matrix4x4 PVCameraWorld;
             capture.TryGetCameraToWorldMatrix(out PVCameraWorld);
-            SetCameraTransform(PVCameraWorld);
+            SetCameraTransform(lastSavedCamera, PVCameraWorld);
             /* False will move the camera relative to the camera offset's position. */
             tempCameraObject.transform.SetParent(cameraOffset, false);
         }
@@ -320,20 +348,22 @@ public class SpatialMapping : MonoBehaviour
         }
 
         lastSavedCamera.enabled = false;
+        AddToCameraList(instructionNum, lastSavedCamera);
 
         Debug.Log("Stored camera state, can move head now");
     }
 
-    public void ClearState()
+    public void ClearCameraState(int instructionNum, int pictureNum)
     {
-        Destroy(lastSavedCamera.gameObject);
-        lastSavedCamera = null;
+        Camera pictureCam = savedCameras[instructionNum][pictureNum];
+        Destroy(pictureCam.gameObject);
+        pictureCam = null;
     }
 
-    public Camera GetLastSavedCamera()
-    {
-        return lastSavedCamera;
-    }
+    //public Camera GetLastSavedCamera()
+    //{
+    //    return lastSavedCamera;
+    //}
 
     private void RunCameraTest()
     {

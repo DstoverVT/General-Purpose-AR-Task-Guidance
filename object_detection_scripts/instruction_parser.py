@@ -1,5 +1,6 @@
 import base64
 import json
+from json import JSONDecodeError
 import re
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -29,7 +30,11 @@ def output_to_json(output) -> dict[str, list[str]]:
     end = output.rfind("}") + 1
     json_string = output[start:end]
 
-    json_data = json.loads(json_string)
+    try:
+        json_data = json.loads(json_string)
+    except JSONDecodeError as e:
+        # Return empty dictionary
+        return None
 
     return json_data
 

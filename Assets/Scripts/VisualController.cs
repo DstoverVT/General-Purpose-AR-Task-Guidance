@@ -59,7 +59,7 @@ public class VisualController : MonoBehaviour
     /* Values for pickup visual curve, from testing. */
     private float pickupHeightOffset = -0.04f;
     //private float pickupVelocity = 0.0075f;
-    private float pickupVelocity = 0.04f;
+    private float pickupVelocity = 0.02f;
     private SpatialMapping spatialMapping;
 
 
@@ -72,7 +72,7 @@ public class VisualController : MonoBehaviour
         hands[(int)Hand.Pull] = handPull;
         if (testPickup)
         {
-            spatialMapping = GameObject.Find("SpatialMapping").GetComponent<SpatialMapping>();
+            spatialMapping = GetComponent<AppController>().spatialMapper;
             testDest = testDestObject.transform.position;
             testSource = testSourceObject.transform.position;
             //StartCoroutine(MovePickupHand(testHand, testSource, testDest, testOffset, testVelocity));
@@ -85,7 +85,7 @@ public class VisualController : MonoBehaviour
         }
         if (testArrow)
         {
-            spatialMapping = GameObject.Find("SpatialMapping").GetComponent<SpatialMapping>();
+            spatialMapping = GetComponent<AppController>().spatialMapper;
             GameObject[] visuals = { testDestObject, testSourceObject };
             spatialMapping.AddToVisualsMap(0, visuals);
         }
@@ -286,8 +286,8 @@ public class VisualController : MonoBehaviour
         Camera cameraComp = mainCamera.GetComponent<Camera>();
         Vector3 targetScreen = cameraComp.WorldToScreenPoint(target.transform.position);
         /* Give some tolerance to ensure target is more towards center of view */
-        float widthTolerance = cameraComp.pixelWidth / 4;
-        float heightTolerance = cameraComp.pixelHeight / 4;
+        float widthTolerance = cameraComp.pixelWidth / 8;
+        float heightTolerance = cameraComp.pixelHeight / 8;
         float maxDistance = 1f;
         /* Ensure target (in screen coordinates) is in screen */
         return (targetScreen.x >= widthTolerance && targetScreen.y >= heightTolerance &&
@@ -300,23 +300,24 @@ public class VisualController : MonoBehaviour
     public void UpdateArrowGuide(GameObject target)
     {
         /* Only display arrow when GameObject to target is not in field of view */
-        //if (!inFieldOfView(target))
-        //{
-        /* Place arrow in front of and slightly below person (camera). */
-        Vector3 inFrontCam = new Vector3(0, -0.3f, 1.5f);
-        inFrontCam = mainCamera.TransformPoint(inFrontCam);
-        arrow.transform.position = inFrontCam;
+        if (!inFieldOfView(target))
+        {
+            arrow.SetActive(true);
+            /* Place arrow in front of and slightly below person (camera). */
+            Vector3 inFrontCam = new Vector3(0, -0.3f, 1.5f);
+            inFrontCam = mainCamera.TransformPoint(inFrontCam);
+            arrow.transform.position = inFrontCam;
 
-        /* Orient arrow towards target. */
-        Vector3 arrowDirection = target.transform.position - arrow.transform.position;
-        Quaternion arrowRotation = Quaternion.LookRotation(arrowDirection);
-        arrow.transform.rotation = arrowRotation;
-        //}
-        ///* Turn off arrow once user has found object. */
-        //else
-        //{
-        //    arrow.SetActive(false);
-        //}
+            /* Orient arrow towards target. */
+            Vector3 arrowDirection = target.transform.position - arrow.transform.position;
+            Quaternion arrowRotation = Quaternion.LookRotation(arrowDirection);
+            arrow.transform.rotation = arrowRotation;
+        }
+        ///* Turn off arrow when in field of view */
+        else
+        {
+            arrow.SetActive(false);
+        }
     }
 
 

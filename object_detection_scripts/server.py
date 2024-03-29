@@ -7,7 +7,7 @@ from object_detection import (
 )
 from task_guidance import (
     delete_images,
-    detect_objects_in_image,
+    detect_objects_from_json,
     instruction_gpt_calls,
     get_instructions_from_file,
     updated_instructions,
@@ -78,16 +78,16 @@ def save_image_from_request() -> str:
 
 @app.route("/upload_image", methods=["POST"])
 def upload_image():
-    request_begin = time.time()
     """Endpoint for Flask server to send an image and run object detection on it.
-    
+
     Returns:
     - Sends back response containing center (x, y) of detected object and action to perform
     """
+    request_begin = time.time()
     filepath = save_image_from_request()
     instruction_num: int = int(request.form["instructionNum"])
     picture_num: int = int(request.form["pictureNum"])
-    found_center, action = detect_objects_in_image(
+    found_center, action = detect_objects_from_json(
         detector,
         filepath,
         app.config["CROP_THRESHOLD"],
@@ -114,23 +114,28 @@ def test_hello():
 def instruction_to_json():
     """Parse instruction. Must call 'get_instructions' endpoint first.
 
-    Adds output to 'parser_output.json' file. If successful, returns empty response.
+    Adds output to 'parser_output.json' file. If successful, returns object center and action.
     """
+    request_begin = time.time()
     filepath = save_image_from_request()
     instruction_num: int = int(request.form["instructionNum"])
     # Output will be written to parser_output.json
-    instruction_gpt_calls(
+    found_center, action = instruction_gpt_calls(
         detector,
         instructions,
         instruction_num,
         app.config["CROP_THRESHOLD"],
+        app.config["OBJECT_THRESHOLD"],
         filepath,
         app.config["UPDATE"],
     )
 
     delete_images(filepath)
 
-    return {}
+    detector_response = {"center": found_center, "action": action}
+    # print(json.dumps(detector_response, indent=4))
+    print(f"Request time: {time.time() - request_begin} s")
+    return detector_response
 
 
 @app.route("/update_instructions", methods=["GET"])

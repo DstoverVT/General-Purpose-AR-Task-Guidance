@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
 using System.Collections;
 using UnityEngine.Windows.WebCam;
 using System.IO;
+using MixedReality.Toolkit.UX;
 
 /** Gets and stores instructions from Python server. */
 public class InstructionController : MonoBehaviour
@@ -14,12 +14,15 @@ public class InstructionController : MonoBehaviour
     private AppController appController;
     private PhotoCapture photoCaptureObject;
     private string imagePath;
-    private Resolution imageResolution;
+    public Resolution imageResolution;
     /** This file is stored on Hololens to contain the filenames of the pictures taken by the operator for the last
      * instruction set. They are stored on each line in a text file, and overwritten when new instruction pictures are taken. */
     private string fileStoragePath;
     [SerializeField]
     private string fileStorageName = "instruction_pictures.json";
+    private float startRequestTime = 0f;
+    private PhotoCaptureFrame currFrame;
+    private Sprite currImage;
 
     [SerializeField]
     private string instructionsEndpoint = "get_instructions";
@@ -29,11 +32,15 @@ public class InstructionController : MonoBehaviour
     private string updateInstructionsEndpoint = "update_instructions";
     [SerializeField]
     private string parserEndpoint = "parse_instruction";
+    [SerializeField]
+    private GameObject pictureDialogBox;
 
     [HideInInspector]
     public List<string> instructions { get; set; }
     [HideInInspector]
     public int currentInstruction = 0;
+    [HideInInspector]
+    public int currentPictureNum = 0;
     /* List that holds whether each instruction is processing or not. 
      * Need to be indexed by instruction number to ensure no concurrent set conditions occur. 
      * Instruction index is true if it is currently being processed by parser. */
@@ -50,7 +57,7 @@ public class InstructionController : MonoBehaviour
     void Start()
     {
         fileStoragePath = Path.Combine(Application.persistentDataPath, fileStorageName);
-        appController = GameObject.Find("AppController").GetComponent<AppController>(); 
+        appController = GetComponent<AppController>(); 
 
         if(!File.Exists(fileStoragePath))
         {
@@ -59,6 +66,8 @@ public class InstructionController : MonoBehaviour
         }
 
         instructionImagePaths = new List<List<string>>();
+        imageResolution.width = 1280;
+        imageResolution.height = 720;
     }
 
     // Update is called once per frame
@@ -94,10 +103,13 @@ public class InstructionController : MonoBehaviour
 
     private void InitializeProcessingList()
     {
-        for(int i = 0; i < instructions.Count; i++)
+        if (instructionProcessing.Count == 0)
         {
-            /* Initialize all instructions to not be processing currently. */
-            instructionProcessing.Add(false);
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                /* Initialize all instructions to not be processing currently. */
+                instructionProcessing.Add(false);
+            }
         }
     }
 
@@ -145,8 +157,9 @@ public class InstructionController : MonoBehaviour
     }
 
 
-    IEnumerator SendPictureToParser(string currImagePath, int currInstruction)
+    IEnumerator SendPictureToParser(string currImagePath, int currInstruction, int currentPicture)
     {
+        startRequestTime = Time.realtimeSinceStartup;
         string serverURL = appController.objectDetector.GetServerURL();
         string requestURL = $"http://{serverURL}/{parserEndpoint}";
 
@@ -173,17 +186,29 @@ public class InstructionController : MonoBehaviour
                 Debug.Log("Error in POST request. Response:");
                 Debug.Log(request.downloadHandler.text);
                 Debug.Log("Error: " + request.error);
-                instructionProcessing[currInstruction] = false;
             }
             else
             {
-                Debug.Log("Done: Picture and instruction have been parsed by GPT.");
+                Debug.Log("Done: Picture and instruction have been parsed by GPT and objects detected.");
                 /* Notify that instruction is done processing. */
-                instructionProcessing[currInstruction] = false;
+                Debug.Log($"Full request time: {Time.realtimeSinceStartup - startRequestTime} s");
+                //Debug.Log("POST request succeeded. Response:");
+                //Debug.Log(request.downloadHandler.text);
+                /* Parse into JSON and send to a function not in Coroutine to parse boxes using Unity event. */
+                ObjectDetector.DetectionResults output = JsonConvert.DeserializeObject<ObjectDetector.DetectionResults>(request.downloadHandler.text);
+                //OnDetectionComplete.Invoke(output, currInstruction);
+                appController.objectDetector.handleDetectionResults(output, currInstruction, currentPicture);
             }
-                
+
+            instructionProcessing[currInstruction] = false;
         } 
 
+    }
+
+
+    public void OperatorImageCancelled()
+    {
+        instructionProcessing[currentInstruction] = false;
     }
 
 
@@ -193,15 +218,15 @@ public class InstructionController : MonoBehaviour
         photoCaptureObject = captureObject;
 
         //Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
-        Resolution photoResolution = new Resolution();
-        photoResolution.width = 1280;
-        photoResolution.height = 720;
-        imageResolution = photoResolution;
+        //Resolution photoResolution = new Resolution();
+        //photoResolution.width = 1280;
+        //photoResolution.height = 720;
+        //imageResolution = photoResolution;
 
         CameraParameters c = new CameraParameters();
         c.hologramOpacity = 0.0f;
-        c.cameraResolutionWidth = photoResolution.width;
-        c.cameraResolutionHeight = photoResolution.height;
+        c.cameraResolutionWidth = imageResolution.width;
+        c.cameraResolutionHeight = imageResolution.height;
         c.pixelFormat = CapturePixelFormat.BGRA32;
 
         captureObject.StartPhotoModeAsync(c, OnPhotoModeStarted);
@@ -216,7 +241,8 @@ public class InstructionController : MonoBehaviour
             string filename = "HL_capture_" + fileTime + ".jpg";
             imagePath = Path.Combine(Application.persistentDataPath, filename);
 
-            photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
+            //photoCaptureObject.TakePhotoAsync(imagePath, PhotoCaptureFileOutputFormat.JPG, OnCapturedPhotoToDisk);
+            photoCaptureObject.TakePhotoAsync(OnCapturedPhotoToMemory);
         }
         else
         {
@@ -225,19 +251,30 @@ public class InstructionController : MonoBehaviour
     }
 
 
+    public void ConfirmOperatorImage()
+    {
+        /* Store camera state from this picture into camera list for raycasting later. */
+        appController.spatialMapper.StoreState(currentInstruction, currFrame);
+        /* Save photo to disk */
+        byte[] imageBytes = ImageConversion.EncodeToJPG(currImage.texture);
+        File.WriteAllBytes(imagePath, imageBytes);
+        AddImagePath(currentInstruction, imagePath, appController.updateMode); 
+        StartCoroutine(SendPictureToParser(imagePath, currentInstruction, currentPictureNum));
+        /* After picture is taken increase picture number. */
+        currentPictureNum++;
+    }
+
+
     void OnCapturedPhotoToMemory(PhotoCapture.PhotoCaptureResult result, PhotoCaptureFrame frame)
     {
         if (result.success)
         {
+            currFrame = frame;
             StartCoroutine(appController.UpdateCenterText(false, "Done"));
-            /* Save photo to disk */
-            Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
-            frame.UploadImageDataToTexture(imageTexture);
-            byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
-            Destroy(imageTexture);
-            File.WriteAllBytes(imagePath, imageBytes);
-            AddImagePath(currentInstruction, imagePath, appController.updateMode); 
-            StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
+            Texture2D tex = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
+            frame.UploadImageDataToTexture(tex);
+            currImage = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
+            appController.DisplayImageConfirmation(pictureDialogBox, currImage);
         }
         else
         {
@@ -264,6 +301,22 @@ public class InstructionController : MonoBehaviour
         /* On first time updating, clear old instruction paths. */
         if(update && !appController.updatedInstructions.Contains(instructionNum))
         {
+            /* Delete files and clear them. */
+            List<string> currInstr = instructionImagePaths[instructionNum];
+            foreach(string path in currInstr)
+            {
+                try
+                {
+                    if (!Application.isEditor)
+                    {
+                        File.Delete(path);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.Log("File could not be deleted: " + e.Message);
+                }
+            }
             instructionImagePaths[instructionNum].Clear();
             appController.updatedInstructions.Add(instructionNum);
         }
@@ -333,7 +386,7 @@ public class InstructionController : MonoBehaviour
             Debug.Log("Saved Picture To Disk, can move head now");
             Debug.Log("Sending picture to GPT...");
             AddImagePath(currentInstruction, imagePath, appController.updateMode); 
-            StartCoroutine(SendPictureToParser(imagePath, currentInstruction));
+            StartCoroutine(SendPictureToParser(imagePath, currentInstruction, currentPictureNum));
         }
         else
         {

@@ -14,13 +14,14 @@ using MixedReality.Toolkit.UX;
 public class ObjectDetector : MonoBehaviour
 {
     private PhotoCapture photoCaptureObject;
-    private SpatialMapping spatialMapper;
-    private AppController appController;
-    private Resolution imageResolution;
     private string imagePath;
     private float startPhotoTime = 0f;
     private float startRequestTime = 0f;
     private float startDrawingTime = 0f;
+    private AppController appController;
+    private SpatialMapping spatialMapper;
+    private PhotoCaptureFrame currFrame;
+    private Sprite currImage;
 
     //[SerializeField]
     //private string serverIP;
@@ -31,34 +32,40 @@ public class ObjectDetector : MonoBehaviour
     private GameObject inputField;
     [SerializeField]
     private string detectorEndpoint = "upload_image";
+    [SerializeField]
+    private GameObject scanDialogBox;
 
 
     // Root myDeserializedClass = JsonConvert.DeserializeObject<Root>(myJsonResponse);
     [Serializable]
-    private class DetectionResults
+    public class DetectionResults
     {
         public string action { get; set; }
         public List<float> center { get; set; }
     }
+    public Resolution imageResolution;
 
-    [Serializable]
-    private class UnityDetectionEvent : UnityEvent<DetectionResults, int>
-    {}
+    //[Serializable]
+    //private class UnityDetectionEvent : UnityEvent<DetectionResults, int>
+    //{}
 
-    /* Action basically creates a delegate (function holder) and event in one, with parameter DetectionResults. */
-    private UnityDetectionEvent OnDetectionComplete;
+    ///* Action basically creates a delegate (function holder) and event in one, with parameter DetectionResults. */
+    //public UnityDetectionEvent OnDetectionComplete;
 
 
     // Start is called before the first frame update
     void Start()
     {
-        if (OnDetectionComplete == null)
-        {
-            OnDetectionComplete = new UnityDetectionEvent();
-        }
-        spatialMapper = GameObject.Find("SpatialMapping").GetComponent<SpatialMapping>();
-        appController = GameObject.Find("AppController").GetComponent<AppController>();
-        OnDetectionComplete.AddListener(handleDetectionResults);
+        appController = GetComponent<AppController>();
+        spatialMapper = appController.spatialMapper;
+        /* Resolution choices in: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/locatable-camera-overview */
+        imageResolution.width = 1280;
+        imageResolution.height = 720;
+        //if (OnDetectionComplete == null)
+        //{
+        //    OnDetectionComplete = new UnityDetectionEvent();
+        //}
+        //OnDetectionComplete.AddListener(handleDetectionResults);
 
         //Debug.Log("Camera resolution: " + spatialMapper.GetLastSavedCamera().pixelWidth + "x" + spatialMapper.GetLastSavedCamera().pixelHeight);
     }
@@ -97,11 +104,15 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    private void handleDetectionResults(DetectionResults results, int instructionNum)
+    public void handleDetectionResults(DetectionResults results, int instructionNum, int pictureNum)
     {
         if (results.center.Count > 0 && results.action.Length > 0)
         {
-            Vector2 objectLocation = TransformBoxToScreenPixels(new Vector2(results.center[0], results.center[1]));
+            Resolution cameraRes = new Resolution();
+            /* Get camera resolution for the camera that took this instruction's picture. */
+            cameraRes.width = appController.spatialMapper.savedCameras[instructionNum][pictureNum].pixelWidth;
+            cameraRes.height = appController.spatialMapper.savedCameras[instructionNum][pictureNum].pixelHeight;
+            Vector2 objectLocation = TransformBoxToScreenPixels(new Vector2(results.center[0], results.center[1]), cameraRes);
 
             VisualController.Hand visual = GetHandVisual(results.action);
             if (visual == VisualController.Hand.Error)
@@ -111,8 +122,9 @@ public class ObjectDetector : MonoBehaviour
             else
             {
                 //spatialMapper.TestPlaceHandFromMesh(objectLocation, visual, true);
-                spatialMapper.StoreMapFromMesh(instructionNum, objectLocation, visual, false);
-                spatialMapper.ClearState();
+                spatialMapper.StoreMapFromMesh(instructionNum, pictureNum, objectLocation, visual, false);
+                spatialMapper.ClearCameraState(instructionNum, pictureNum);
+                //spatialMapper.ClearState();
             }
         }
         else
@@ -120,18 +132,18 @@ public class ObjectDetector : MonoBehaviour
             Debug.Log("No boxes were found for object or action was empty");
         }
 
-        Debug.Log($"Visual time: {Time.realtimeSinceStartup - startDrawingTime} s");
+        //Debug.Log($"Visual time: {Time.realtimeSinceStartup - startDrawingTime} s");
     }
 
     /* Convert the box pixel location to a location on Hololens view */
-    private Vector2 TransformBoxToScreenPixels(Vector2 imagePixels)
+    private Vector2 TransformBoxToScreenPixels(Vector2 imagePixels, Resolution cameraResolution)
     {
         /* Image taken from Hololens has different resolution than view does */
-        float widthScale = (float)spatialMapper.GetLastSavedCamera().pixelWidth / (float)imageResolution.width;
-        float heightScale = (float)spatialMapper.GetLastSavedCamera().pixelHeight / (float)imageResolution.height;
+        float widthScale = (float)cameraResolution.width / (float)imageResolution.width;
+        float heightScale = (float)cameraResolution.height / (float)imageResolution.height;
         float x_coord = imagePixels.x * widthScale;
         /* box is returned as (x, y) from top-left, Unity uses bottom-left as (0, 0). Conversion: */
-        float y_coord = spatialMapper.GetLastSavedCamera().pixelHeight - (imagePixels.y * heightScale); 
+        float y_coord = cameraResolution.height - (imagePixels.y * heightScale); 
 
         return new Vector2(x_coord, y_coord);
     }
@@ -155,17 +167,16 @@ public class ObjectDetector : MonoBehaviour
         //    Debug.Log($"{res.width} x {res.height}");
         //}
         //Resolution photoResolution = PhotoCapture.SupportedResolutions.OrderByDescending((res) => res.width * res.height).First();
-        Resolution photoResolution = new Resolution();
-        /* Resolution choices in: https://learn.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/locatable-camera-overview */
-        photoResolution.width = 1280;
-        photoResolution.height = 720; 
-        imageResolution = photoResolution;
+        //Resolution photoResolution = new Resolution();
+        //photoResolution.width = 1280;
+        //photoResolution.height = 720; 
+        //imageResolution = photoResolution;
         //Debug.Log("Image Width: " + photoResolution.width);
         //Debug.Log("Image Height: " + photoResolution.height);
         CameraParameters c = new CameraParameters();
         c.hologramOpacity = 0.0f;
-        c.cameraResolutionWidth = photoResolution.width;
-        c.cameraResolutionHeight = photoResolution.height;
+        c.cameraResolutionWidth = imageResolution.width;
+        c.cameraResolutionHeight = imageResolution.height;
         c.pixelFormat = CapturePixelFormat.BGRA32;
 
         captureObject.StartPhotoModeAsync(c, OnPhotoModeStarted);
@@ -190,21 +201,32 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
+    public void ConfirmScanPicture()
+    {
+        /* Store camera state from this picture into camera list for raycasting later. */
+        appController.spatialMapper.StoreState(appController.instructionController.currentInstruction, currFrame);
+        byte[] imageBytes = ImageConversion.EncodeToJPG(currImage.texture);
+        /* Save photo to disk */
+        File.WriteAllBytes(imagePath, imageBytes);
+        StartCoroutine(UploadImage(imagePath, appController.instructionController.currentInstruction, appController.instructionController.currentPictureNum));
+        /* Move onto next picture in scanning phase. */
+        appController.ScanNextPicture();
+    }
+
+
     void OnCapturedPhotoToMemory(PhotoCapture.PhotoCaptureResult result, PhotoCaptureFrame frame)
     {
         if (result.success)
         {
+            currFrame = frame;
             StartCoroutine(appController.UpdateCenterText(false, "Done"));
             Debug.Log($"Photo capture time: {Time.realtimeSinceStartup - startPhotoTime} s");
             /* Saving frame to be able to extract camera details for spatial mapper. */
-        spatialMapper.StoreState(frame);
-            Texture2D imageTexture = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
-            frame.UploadImageDataToTexture(imageTexture);
-            byte[] imageBytes = ImageConversion.EncodeToJPG(imageTexture);
-            Destroy(imageTexture);
-            /* Save photo to disk */
-            File.WriteAllBytes(imagePath, imageBytes);
-            StartCoroutine(UploadImage(imagePath, appController.instructionController.currentInstruction, appController.instructionPictureNum));
+            //spatialMapper.StoreState(frame);
+            Texture2D tex = new Texture2D(imageResolution.width, imageResolution.height, TextureFormat.RGB24, false);
+            frame.UploadImageDataToTexture(tex);
+            currImage = Sprite.Create(tex, new Rect(0.0f, 0.0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
+            appController.DisplayImageConfirmation(scanDialogBox, currImage);
         }
         else
         {
@@ -230,7 +252,7 @@ public class ObjectDetector : MonoBehaviour
     }
 
 
-    IEnumerator UploadImage(string imagePath, int currInstruction, int currPicture)
+    public IEnumerator UploadImage(string imagePath, int currInstruction, int currPicture)
     {
         startRequestTime = Time.realtimeSinceStartup;
         ////Debug.Log("Upload image Coroutine.");
@@ -270,7 +292,8 @@ public class ObjectDetector : MonoBehaviour
                 /* Parse into JSON and send to a function not in Coroutine to parse boxes using Unity event. */
                 startDrawingTime = Time.realtimeSinceStartup;
                 DetectionResults output = JsonConvert.DeserializeObject<DetectionResults>(request.downloadHandler.text);
-                OnDetectionComplete.Invoke(output, currInstruction);
+                //OnDetectionComplete.Invoke(output, currInstruction);
+                handleDetectionResults(output, currInstruction, currPicture);
             }
         }
 
