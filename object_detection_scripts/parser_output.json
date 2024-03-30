@@ -1,7 +1,7 @@
 {
     "0": {
         "objects": [
-            "bottom center SNOOZE / SLEEP OFF button"
+            "red snooze button"
         ],
         "actions": [
             "press"
@@ -9,7 +9,7 @@
     },
     "1": {
         "objects": [
-            "top drawer handle"
+            "top silver handle"
         ],
         "actions": [
             "pull"
@@ -17,7 +17,7 @@
     },
     "2": {
         "objects": [
-            "center white circular cap",
+            "white circular cap",
             "top of the coffee maker"
         ],
         "actions": [
@@ -27,7 +27,7 @@
     },
     "3": {
         "objects": [
-            "center white circular cap"
+            "on top of the coffee maker white circular cap"
         ],
         "actions": [
             "twist"
@@ -35,7 +35,7 @@
     },
     "4": {
         "objects": [
-            "bottom right red power button"
+            "front red power button"
         ],
         "actions": [
             "press"
@@ -43,7 +43,7 @@
     },
     "5": {
         "objects": [
-            "front left fan switch"
+            "right white knob"
         ],
         "actions": [
             "twist"

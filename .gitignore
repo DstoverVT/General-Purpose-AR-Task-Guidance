@@ -17,4 +17,7 @@ object_detection_scripts/weights/
 object_detection_scripts/.env
 object_detection_scripts/__pycache__/
 object_detection_scripts/results/
+object_detection_scripts/*.png
+object_detection_scripts/*.jpg
+
 

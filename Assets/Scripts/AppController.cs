@@ -693,6 +693,8 @@ public class AppController : MonoBehaviour
             {
                 visual.SetActive(displayVisual);
             }
+            /* Set first (hand) parent GameObject to be hidden for other instructions. */
+            //instructionVisuals[0].SetActive(displayVisual);
         }
     }
 

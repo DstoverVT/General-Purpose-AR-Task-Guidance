@@ -5,7 +5,6 @@ using UnityEngine;
 using UnityEngine.Windows.WebCam;
 using UnityEngine.XR.ARFoundation;
 
-/** Manages raycasting against spatial mesh. */ 
 public class SpatialMapping : MonoBehaviour
 {
     public Camera mainCamera;
@@ -19,6 +18,7 @@ public class SpatialMapping : MonoBehaviour
     private bool raycastTest = false;
     private bool cameraTest = false;
     //private Camera lastSavedCamera;
+    private List<GameObject> visualAnchors = new List<GameObject>();
 
     [SerializeField]
     private VisualController.Hand testHandType;
@@ -36,7 +36,8 @@ public class SpatialMapping : MonoBehaviour
     private AppController app;
     [SerializeField]
     private ARMeshManager meshManager;
-
+    [SerializeField]
+    private ARAnchorManager anchorManager;
 
 
     // Start is called before the first frame update
@@ -48,6 +49,8 @@ public class SpatialMapping : MonoBehaviour
         {
             testCameraComponent.CopyFrom(mainCamera);
         }
+
+        anchorManager.anchorsChanged += (ARAnchorsChangedEventArgs args) => Debug.Log("AR Anchors updated");
     }
 
     // Update is called once per frame
@@ -99,6 +102,42 @@ public class SpatialMapping : MonoBehaviour
     }
 
 
+    private void InitializeAnchorList()
+    {
+        for(int i = 0; i < app.instructionController.instructions.Count; i++)
+        {
+            GameObject newAnchor = new GameObject($"VisualAnchor{i}");
+            newAnchor.SetActive(true);
+            visualAnchors.Add(newAnchor);
+        }
+    }
+
+
+    private void SetVisualAnchor(int instructionNum, GameObject[] visuals)
+    {
+        if(visualAnchors.Count == 0)
+        {
+            InitializeAnchorList();
+        }
+
+        /* Re-attach anchor to new location. */
+        GameObject currAnchor = visualAnchors[instructionNum];
+        if (currAnchor.GetComponent<ARAnchor>() != null)
+        {
+            Destroy(currAnchor.GetComponent<ARAnchor>());
+        }
+        /* assign hand position (visuals[0]) to anchor to track it. */
+        currAnchor.transform.position = visuals[0].transform.position;
+        currAnchor.AddComponent<ARAnchor>();
+
+        /* Assign visuals as children to anchor. */
+        foreach(GameObject visual in visuals)
+        {
+            visual.transform.SetParent(currAnchor.transform, true);
+        }
+    }
+
+
     public void AddToVisualsMap(int instructionNum, GameObject[] actionVisuals)
     {
         /* Create initial List if instruction index does not exist yet. */
@@ -112,8 +151,16 @@ public class SpatialMapping : MonoBehaviour
         }
 
         /* Only one visual per instruction, so can clear beforehand. */
-        app.visualsMap[instructionNum].Clear();
+        List<GameObject> currVisuals = app.visualsMap[instructionNum];
+        /* Get rid of previous visuals. */
+        foreach(GameObject visual in currVisuals)
+        {
+            Destroy(visual);
+        }
+        currVisuals.Clear();
+        /* Add new visuals. */
         app.visualsMap[instructionNum].AddRange(actionVisuals);
+        SetVisualAnchor(instructionNum, actionVisuals);
     }
 
 
@@ -170,6 +217,7 @@ public class SpatialMapping : MonoBehaviour
                     }
                     else
                     {
+                        GameObject visualAnchor = new GameObject("VisualAnchor");
                         AddToVisualsMap(instructionNum, visuals);
                     }
                 }
@@ -373,5 +421,4 @@ public class SpatialMapping : MonoBehaviour
         rayLine.positionCount = 2;
         rayLine.SetPositions(new Vector3[] { ray.origin, ray.origin + ray.direction * 5 });
     }
-
 }

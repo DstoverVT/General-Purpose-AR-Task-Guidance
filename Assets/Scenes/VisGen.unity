@@ -4703,7 +4703,10 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2351505566903569412, guid: 4d7e2f87fefe0ba468719b15288b46e7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 749966855}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 2351505566903569413, guid: 4d7e2f87fefe0ba468719b15288b46e7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2110723975}
   m_SourcePrefab: {fileID: 100100000, guid: 4d7e2f87fefe0ba468719b15288b46e7, type: 3}
 --- !u!20 &589768503 stripped
 Camera:
@@ -5093,6 +5096,7 @@ MonoBehaviour:
   meshTransparent: {fileID: 2100000, guid: f90420c0b29aeff4f8a21cc803bdb8ca, type: 2}
   app: {fileID: 1466554671}
   meshManager: {fileID: 749966856}
+  anchorManager: {fileID: 0}
 --- !u!4 &675146150
 Transform:
   m_ObjectHideFlags: 0
@@ -10822,6 +10826,11 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1588017343}
   m_CullTransparentMesh: 1
+--- !u!1 &1626709488 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2351505566903569413, guid: 4d7e2f87fefe0ba468719b15288b46e7, type: 3}
+  m_PrefabInstance: {fileID: 589768502}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1629797604
 GameObject:
   m_ObjectHideFlags: 0
@@ -13549,7 +13558,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 61.5, y: 0}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2024112902
@@ -15506,6 +15515,19 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2351505566903569412, guid: 4d7e2f87fefe0ba468719b15288b46e7, type: 3}
   m_PrefabInstance: {fileID: 589768502}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &2110723975
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1626709488}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 728ad7fae8e460a4ba41265c7308d757, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_AnchorPrefab: {fileID: 0}
 --- !u!1 &2111701479
 GameObject:
   m_ObjectHideFlags: 0

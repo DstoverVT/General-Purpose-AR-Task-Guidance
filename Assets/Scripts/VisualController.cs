@@ -119,9 +119,16 @@ public class VisualController : MonoBehaviour
         /* Put square on its side to make a diamond shape. */
         Quaternion offCenter = Quaternion.Euler(0, 0, 45);
         Quaternion intersectionRotation = Quaternion.LookRotation(-sourceNormal);
+        /* Make intersection squares children of hand visual since hands will be spatial anchors and may update. */
         visuals[1] = Instantiate(intersectionObject, source, intersectionRotation * offCenter);
+        //visuals[1].transform.SetParent(visuals[0].transform, true);
         Quaternion intersectionRotationDest = Quaternion.LookRotation(-destNormal);
         visuals[2] = Instantiate(intersectionObject, destination, intersectionRotationDest * offCenter);
+        //visuals[2].transform.SetParent(visuals[0].transform, true);
+        /* Set children active but not parent. */
+        //visuals[2].SetActive(true);
+        //visuals[1].SetActive(true);
+        //visuals[0].SetActive(false);
 
         return visuals;
     }
@@ -191,7 +198,14 @@ public class VisualController : MonoBehaviour
             visuals = new GameObject[2];
             visuals[0] = Instantiate(handVisual, handPosition, handRotation);
             visuals[1] = Instantiate(intersectionObject, location, intersectionRotation * offCenter);
+            /* Make intersection squares children of hand visual since hands will be spatial anchors and may update. */
+            //visuals[1].transform.SetParent(visuals[0].transform, true);
+            /* Set child active but not parent. */
+            //visuals[1].SetActive(true);
+            //visuals[0].SetActive(false);
         }
+
+
 
         return visuals;
     }
